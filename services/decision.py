@@ -287,6 +287,9 @@ class DecisionLayer:
             
             decision = decision_data.get("decision", "ADD").upper()
             target_run_id = decision_data.get("target_run_id")
+            # Handle string "null" or None
+            if target_run_id == "null" or target_run_id == "":
+                target_run_id = None
             reason = decision_data.get("reason", "No reason provided")
             
             # Validate decision
@@ -372,15 +375,18 @@ Prioritize:
 
 CRITICAL: You MUST respond with ONLY valid JSON. No markdown, no code blocks, no explanations outside the JSON. Start with {{ and end with }}.
 
-Required JSON format:
+Required JSON format (copy this exactly and fill in values):
 {{
   "decision": "ADD",
   "target_run_id": null,
   "reason": "brief explanation"
 }}
 
-For REPLACE or MERGE, set target_run_id to the run_id from SIMILAR EXISTING RUNS above.
-For ADD or NOT, set target_run_id to null."""
+Valid decision values: "ADD", "NOT", "REPLACE", "MERGE"
+- For REPLACE or MERGE: set target_run_id to the run_id from SIMILAR EXISTING RUNS above
+- For ADD or NOT: set target_run_id to null
+
+IMPORTANT: Return ONLY the JSON object, nothing else. No markdown formatting, no code blocks."""
         
         return prompt
     

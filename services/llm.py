@@ -114,12 +114,13 @@ Provide a concise, structured summary that would help an agent understand what h
             model_name = self.model if self.model.startswith("models/") else f"models/{self.model}"
             model = self.client.GenerativeModel(model_name)
             try:
+                # For Gemini, we can't force JSON via config, so we rely on the prompt
+                # and parse the response carefully
                 response = model.generate_content(
                     prompt,
                     generation_config={
                         "temperature": 0.1,  # Very low temperature for consistent JSON
                         "max_output_tokens": 200,
-                        "response_mime_type": "application/json",  # Force JSON response
                     }
                 )
                 return response.text.strip()
