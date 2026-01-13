@@ -99,4 +99,46 @@ Provide a concise, structured summary that would help an agent understand what h
                 lines.append(f"{prefix}{key}: {str_value}")
         
         return "\n".join(lines)
+    
+    def make_decision(self, prompt: str) -> str:
+        """
+        Make a memory admission decision using LLM.
+        
+        Args:
+            prompt: The decision prompt
+            
+        Returns:
+            JSON string with decision, target_run_id (optional), and reason
+        """
+        if self.provider == "gemini":
+            model_name = self.model if self.model.startswith("models/") else f"models/{self.model}"
+            model = self.client.GenerativeModel(model_name)
+            try:
+                response = model.generate_content(
+                    prompt,
+                    generation_config={
+                        "temperature": 0.1,  # Very low temperature for consistent JSON
+                        "max_output_tokens": 200,
+                        "response_mime_type": "application/json",  # Force JSON response
+                    }
+                )
+                return response.text.strip()
+            except Exception as e:
+                error_str = str(e)
+                # Check for rate limit errors
+                if "429" in error_str or "quota" in error_str.lower() or "rate" in error_str.lower():
+                    raise Exception(f"Gemini API rate limit exceeded. Please wait before retrying. Error: {error_str[:200]}")
+                raise
+        else:  # openai
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a memory curator for agent workflows. Respond with JSON only. No markdown, no code blocks."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=200,
+                response_format={"type": "json_object"}  # Force JSON output
+            )
+            return response.choices[0].message.content.strip()
 

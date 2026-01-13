@@ -1,15 +1,17 @@
 """Memory Builder - processes completed runs and stores them in Neo4j."""
 import hashlib
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 import numpy as np
 from neo4j import Driver
 
 from db.connection import get_neo4j_driver
 from models.run import RunPayload, Reference, Artifact
+from models.decision import MemoryDecision
 from services.embedding import EmbeddingService
 from services.llm import LLMService
+from services.decision import DecisionLayer
 import config
 
 
@@ -20,6 +22,7 @@ class MemoryBuilder:
         self.driver = get_neo4j_driver()
         self.embedding_service = EmbeddingService()
         self.llm_service = LLMService()
+        self.decision_layer = DecisionLayer()
         self.similarity_threshold = config.Config.SIMILARITY_THRESHOLD
     
     def process_run(self, payload: RunPayload) -> Dict[str, Any]:
@@ -52,21 +55,57 @@ class MemoryBuilder:
             summary = self.llm_service.summarize_run(run_tree_dict, outcome)
             summary_embedding = self.embedding_service.embed(summary)
             
-            # Step 3: Extract and store references
+            # Step 3: Extract references and artifacts (needed for decision)
             references = self._extract_references(run_tree_dict)
+            artifacts = self._extract_artifacts(run_tree_dict)
+            
+            # Step 4: Decision layer - decide whether to add, skip, replace, or merge
+            try:
+                decision = self.decision_layer.decide(
+                    run_id=payload.run_id,
+                    run_summary=summary,
+                    run_embedding=summary_embedding,
+                    task_text=task_text,
+                    outcome=outcome,
+                    references=[{"type": r.type, "source_ref": r.source_ref} for r in references],
+                    artifacts=[{"type": a.type, "hash": a.hash} for a in artifacts]
+                )
+            except Exception as e:
+                import traceback
+                error_msg = f"Error in decision layer: {str(e)}\n{traceback.format_exc()}"
+                print(f"[ERROR] {error_msg}")
+                raise Exception(error_msg) from e
+            
+            # Step 5: Execute decision
+            if decision.decision == "NOT":
+                # Store decision for observability but don't add run
+                self.decision_layer.store_decision(decision)
+                return {
+                    "success": True,
+                    "decision": "NOT",
+                    "reason": decision.reason,
+                    "message": "Run not added to memory (redundant or low value)"
+                }
+            
+            # For ADD, REPLACE, MERGE: proceed with storage
             reference_ids = []
             for ref in references:
                 ref_id = self._upsert_reference(ref)
                 reference_ids.append(ref_id)
             
-            # Step 4: Extract and store artifacts
-            artifacts = self._extract_artifacts(run_tree_dict)
             artifact_ids = []
             for artifact in artifacts:
                 art_id = self._upsert_artifact(artifact)
                 artifact_ids.append(art_id)
             
-            # Step 5: Create Run node and relationships
+            # Handle REPLACE: mark old run as superseded
+            if decision.decision == "REPLACE" and decision.target_run_id:
+                self._mark_run_superseded(decision.target_run_id, payload.run_id)
+            
+            # Handle MERGE: mark canonical run (for now, keep both active)
+            # Future: could aggregate metadata here
+            
+            # Step 6: Create Run node and relationships
             run_id = self._create_run(
                 payload=payload,
                 summary=summary,
@@ -74,21 +113,33 @@ class MemoryBuilder:
                 task_id=task_id,
                 reference_ids=reference_ids,
                 artifact_ids=artifact_ids,
-                run_tree_dict=run_tree_dict
+                run_tree_dict=run_tree_dict,
+                status="active"  # All new runs start as active
             )
+            
+            # Store decision for observability
+            self.decision_layer.store_decision(decision)
             
             return {
                 "success": True,
+                "decision": decision.decision,
                 "run_id": run_id,
                 "task_id": task_id,
                 "references_count": len(reference_ids),
-                "artifacts_count": len(artifact_ids)
+                "artifacts_count": len(artifact_ids),
+                "target_run_id": decision.target_run_id,
+                "reason": decision.reason
             }
             
         except Exception as e:
+            import traceback
+            error_str = str(e)
+            error_traceback = traceback.format_exc()
+            print(f"[ERROR] Exception in process_run:")
+            print(error_traceback)
             return {
                 "success": False,
-                "error": str(e)
+                "error": f"{error_str}\n\nTraceback:\n{error_traceback}"
             }
     
     def _upsert_task(self, task_text: str) -> str:
@@ -108,6 +159,8 @@ class MemoryBuilder:
             # This uses manual cosine similarity calculation
             
             # Get all tasks and calculate similarity in Python
+            # Only compare with embeddings that have the same dimension
+            expected_dim = len(task_embedding)
             result = session.run("""
                 MATCH (t:Task)
                 WHERE t.embedding IS NOT NULL
@@ -119,10 +172,18 @@ class MemoryBuilder:
             
             for record in result:
                 task_emb = record["embedding"]
-                similarity = self._cosine_similarity(task_embedding, task_emb)
-                if similarity >= self.similarity_threshold and similarity > best_similarity:
-                    best_similarity = similarity
-                    best_match = record["id"]
+                # Skip embeddings with wrong dimension (from different model)
+                if len(task_emb) != expected_dim:
+                    continue
+                try:
+                    similarity = self._cosine_similarity(task_embedding, task_emb)
+                    if similarity >= self.similarity_threshold and similarity > best_similarity:
+                        best_similarity = similarity
+                        best_match = record["id"]
+                except Exception as e:
+                    # Skip if similarity calculation fails (dimension mismatch, etc.)
+                    print(f"[WARNING] Skipping task {record['id']} due to embedding dimension mismatch: {e}")
+                    continue
             
             if best_match:
                 return best_match
@@ -149,11 +210,12 @@ class MemoryBuilder:
         task_id: str,
         reference_ids: List[str],
         artifact_ids: List[str],
-        run_tree_dict: Dict[str, Any]
+        run_tree_dict: Dict[str, Any],
+        status: str = "active"
     ) -> str:
         """Create Run node and all relationships."""
         run_id = payload.run_id
-        created_at = payload.get_created_at() or datetime.utcnow()
+        created_at = payload.get_created_at() or datetime.now(timezone.utc)
         
         with self.driver.session() as session:
             # Store run_tree as JSON string for later retrieval
@@ -166,14 +228,16 @@ class MemoryBuilder:
                     r.summary = $summary,
                     r.embedding = $embedding,
                     r.run_tree = $run_tree,
-                    r.created_at = $created_at
+                    r.created_at = $created_at,
+                    r.status = $status
             """, 
                 run_id=run_id,
                 agent_id=payload.agent_id,
                 summary=summary,
                 embedding=summary_embedding,
                 run_tree=run_tree_json,
-                created_at=created_at.isoformat()
+                created_at=created_at.isoformat(),
+                status=status
             )
             
             # Link to Task
@@ -425,4 +489,13 @@ class MemoryBuilder:
         if norm1 == 0 or norm2 == 0:
             return 0.0
         return float(dot_product / (norm1 * norm2))
+    
+    def _mark_run_superseded(self, old_run_id: str, new_run_id: str) -> None:
+        """Mark an old run as superseded by a new run."""
+        with self.driver.session() as session:
+            session.run("""
+                MATCH (r:Run {id: $old_run_id})
+                SET r.status = 'superseded',
+                    r.superseded_by = $new_run_id
+            """, old_run_id=old_run_id, new_run_id=new_run_id)
 

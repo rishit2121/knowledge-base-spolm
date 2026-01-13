@@ -84,12 +84,23 @@ async def process_run(payload: RunPayload):
                 "data": result
             }
         else:
+            error_msg = result.get('error', 'Unknown error')
+            # Log the actual error for debugging
+            print(f"[ERROR] process_run returned success=False: {error_msg}")
             raise HTTPException(
                 status_code=500,
-                detail=f"Failed to process run: {result.get('error')}"
+                detail=f"Failed to process run: {error_msg}"
             )
+    except HTTPException:
+        # Re-raise HTTPExceptions as-is (don't double-wrap)
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        import traceback
+        # Log the full error for debugging
+        print(f"[ERROR] Exception in process_run endpoint:")
+        print(traceback.format_exc())
+        error_detail = f"{str(e)}\n\nTraceback:\n{traceback.format_exc()}"
+        raise HTTPException(status_code=500, detail=error_detail)
 
 
 @app.post("/retrieve", response_model=RetrievalResponse)

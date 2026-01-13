@@ -25,7 +25,7 @@ class Config:
     # Gemini Configuration
     GEMINI_API_KEY: Optional[str] = os.getenv("GEMINI_API_KEY")
     # Available embedding models: text-embedding-004, gemini-embedding-001, embedding-001
-    GEMINI_EMBEDDING_MODEL: str = os.getenv("GEMINI_EMBEDDING_MODEL", "text-embedding-004")
+    GEMINI_EMBEDDING_MODEL: str = os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001")
     # Available chat models: gemini-2.5-flash, gemini-2.5-pro, gemini-2.0-flash
     GEMINI_CHAT_MODEL: str = os.getenv("GEMINI_CHAT_MODEL", "gemini-2.5-flash")
     
