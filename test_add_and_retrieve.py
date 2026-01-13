@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 
 
-def add_run(api_url="http://localhost:8000"):
+def add_run(api_url="https://knowledge-base-spolm.vercel.app"):
     """Add a test run to the knowledge base using the API."""
     print("=" * 70)
     print("STEP 1: Adding a Run to Knowledge Base via API")
@@ -373,7 +373,7 @@ def add_run(api_url="http://localhost:8000"):
         return None
 
 
-def retrieve_similar(run_id: str, api_url="http://localhost:8000"):
+def retrieve_similar(run_id: str, api_url="https://knowledge-base-spolm.vercel.app"):
     """Retrieve the run using a similar but not exact task via API."""
     print("\n" + "=" * 70)
     print("STEP 2: Retrieving with Similar Task via API")
@@ -456,25 +456,31 @@ if __name__ == "__main__":
     print("ADD AND RETRIEVE TEST (via API)")
     print("🧪 " * 35 + "\n")
     
-    # Get API URL from command line or use default
-    api_url = sys.argv[1] if len(sys.argv) > 1 else "http://localhost:8000"
+    # Get API URL from command line or use default (Vercel)
+    api_url = sys.argv[1] if len(sys.argv) > 1 else "https://knowledge-base-spolm.vercel.app"
+    
+    # Ensure URL has https:// prefix if not provided
+    if not api_url.startswith("http://") and not api_url.startswith("https://"):
+        api_url = f"https://{api_url}"
     
     print(f"🌐 Using API: {api_url}")
-    print(f"   Make sure the API server is running: python api.py")
     print()
     
     # Check if API is running
     try:
-        health_check = requests.get(f"{api_url}/", timeout=2)
+        health_check = requests.get(f"{api_url}/", timeout=10)
         if health_check.status_code == 200:
             print("✅ API server is running\n")
         else:
             print("⚠️  API server responded but may not be ready\n")
-    except requests.exceptions.RequestException:
+    except requests.exceptions.RequestException as e:
         print("⚠️  Could not connect to API server")
-        print(f"   Make sure it's running at {api_url}")
-        print(f"   Start it with: python api.py\n")
-        sys.exit(1)
+        print(f"   URL: {api_url}")
+        print(f"   Error: {e}\n")
+        print("   Note: Vercel deployments may take a few seconds on first request (cold start)")
+        response = input("   Continue anyway? (y/n): ")
+        if response.lower() != 'y':
+            sys.exit(1)
     
     # Step 1: Add a run via API
     run_id = add_run(api_url)

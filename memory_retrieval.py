@@ -94,7 +94,9 @@ class MemoryRetrieval:
             
             query = f"""
                 MATCH (r:Run)
-                WHERE r.embedding IS NOT NULL {agent_filter}
+                WHERE r.embedding IS NOT NULL
+                  AND (r.status IS NULL OR r.status = 'active')
+                  {agent_filter}
                 RETURN r.id AS run_id, r.embedding AS embedding
             """
             
@@ -105,14 +107,23 @@ class MemoryRetrieval:
             result = session.run(query, **params)
             
             # Calculate similarity in Python
+            # Only compare with embeddings that have the same dimension
+            expected_dim = len(query_embedding)
             runs_with_similarity = []
             for record in result:
                 run_embedding = record["embedding"]
-                similarity = self._cosine_similarity(query_embedding, run_embedding)
-                runs_with_similarity.append({
-                    "run_id": record["run_id"],
-                    "similarity": similarity
-                })
+                # Skip embeddings with wrong dimension (from different model)
+                if len(run_embedding) != expected_dim:
+                    continue
+                try:
+                    similarity = self._cosine_similarity(query_embedding, run_embedding)
+                    runs_with_similarity.append({
+                        "run_id": record["run_id"],
+                        "similarity": similarity
+                    })
+                except Exception as e:
+                    # Skip if similarity calculation fails (dimension mismatch, etc.)
+                    continue
             
             # Sort by similarity and return top_k
             runs_with_similarity.sort(key=lambda x: x["similarity"], reverse=True)
