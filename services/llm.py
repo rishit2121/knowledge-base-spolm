@@ -1,6 +1,7 @@
 """LLM service for summarization and analysis."""
 from typing import Dict, Any
 import config
+import google.generativeai.types as genai_types
 
 
 class LLMService:
@@ -116,14 +117,113 @@ Provide a concise, structured summary that would help an agent understand what h
             try:
                 # For Gemini, we can't force JSON via config, so we rely on the prompt
                 # and parse the response carefully
+                # Disable safety filters to ensure we get the full response
+                import google.generativeai.types as genai_types
                 response = model.generate_content(
                     prompt,
                     generation_config={
                         "temperature": 0.1,  # Very low temperature for consistent JSON
-                        "max_output_tokens": 200,
-                    }
+                        "max_output_tokens": 1048,  # Increased significantly to ensure full JSON response
+                    },
+                    safety_settings=[
+                        {"category": genai_types.HarmCategory.HARM_CATEGORY_HARASSMENT, "threshold": genai_types.HarmBlockThreshold.BLOCK_NONE},
+                        {"category": genai_types.HarmCategory.HARM_CATEGORY_HATE_SPEECH, "threshold": genai_types.HarmBlockThreshold.BLOCK_NONE},
+                        {"category": genai_types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, "threshold": genai_types.HarmBlockThreshold.BLOCK_NONE},
+                        {"category": genai_types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, "threshold": genai_types.HarmBlockThreshold.BLOCK_NONE},
+                    ]
                 )
-                return response.text.strip()
+                # Handle different response formats from Gemini
+                import sys
+                print("\n" + "="*80, file=sys.stderr)
+                print("[DEBUG] ========== GEMINI API RESPONSE ==========", file=sys.stderr)
+                print(f"[DEBUG] Response type: {type(response)}", file=sys.stderr)
+                print(f"[DEBUG] Has 'text' attr: {hasattr(response, 'text')}", file=sys.stderr)
+                
+                # Check for finish reason and safety blocks
+                finish_reason = None
+                safety_ratings = None
+                if hasattr(response, 'candidates') and len(response.candidates) > 0:
+                    candidate = response.candidates[0]
+                    finish_reason = getattr(candidate, 'finish_reason', None)
+                    safety_ratings = getattr(candidate, 'safety_ratings', None)
+                    print(f"[DEBUG] Finish reason: {finish_reason}", file=sys.stderr)
+                    print(f"[DEBUG] Safety ratings: {safety_ratings}", file=sys.stderr)
+                    if finish_reason == 'MAX_TOKENS':
+                        print(f"[WARNING] Response was truncated due to max_output_tokens!", file=sys.stderr)
+                    elif finish_reason == 'SAFETY':
+                        print(f"[WARNING] Response was blocked by safety filters!", file=sys.stderr)
+                        if safety_ratings:
+                            for rating in safety_ratings:
+                                print(f"[DEBUG] Safety rating: {rating}", file=sys.stderr)
+                
+                # Extract text - ALWAYS use candidates first (response.text can be truncated)
+                result = None
+                # First try candidates (more reliable for full text)
+                if hasattr(response, 'candidates') and len(response.candidates) > 0:
+                    candidate = response.candidates[0]
+                    print(f"[DEBUG] Using candidates[0] for text extraction", file=sys.stderr)
+                    print(f"[DEBUG] Candidate type: {type(candidate)}", file=sys.stderr)
+                    print(f"[DEBUG] Candidate attributes: {dir(candidate)}", file=sys.stderr)
+                    
+                    if hasattr(candidate, 'content'):
+                        print(f"[DEBUG] Candidate has content: {type(candidate.content)}", file=sys.stderr)
+                        if hasattr(candidate.content, 'parts') and len(candidate.content.parts) > 0:
+                            # Get all parts, concatenate them
+                            parts_text = []
+                            print(f"[DEBUG] Found {len(candidate.content.parts)} parts", file=sys.stderr)
+                            for i, part in enumerate(candidate.content.parts):
+                                print(f"[DEBUG] Part {i} type: {type(part)}, has text: {hasattr(part, 'text')}", file=sys.stderr)
+                                if hasattr(part, 'text'):
+                                    part_text = part.text
+                                    print(f"[DEBUG] Part {i} text length: {len(part_text) if part_text else 0}", file=sys.stderr)
+                                    parts_text.append(part_text)
+                                else:
+                                    print(f"[DEBUG] Part {i} has no text attr, trying str(): {str(part)[:100]}", file=sys.stderr)
+                                    parts_text.append(str(part))
+                            result = ''.join(parts_text) if parts_text else None
+                            print(f"[DEBUG] Extracted {len(parts_text)} parts, total length: {len(result) if result else 0}", file=sys.stderr)
+                        else:
+                            print(f"[DEBUG] No parts found, using str(candidate.content)", file=sys.stderr)
+                            result = str(candidate.content)
+                    else:
+                        print(f"[DEBUG] Candidate has no content, using str(candidate)", file=sys.stderr)
+                        result = str(candidate)
+                
+                # Fallback to response.text (but warn if it's different from candidates)
+                if not result and hasattr(response, 'text'):
+                    result = response.text
+                    print(f"[WARNING] Using response.text (fallback) - candidates extraction failed", file=sys.stderr)
+                elif hasattr(response, 'text') and result:
+                    # Compare lengths
+                    text_from_property = response.text
+                    if len(text_from_property) != len(result):
+                        print(f"[WARNING] response.text length ({len(text_from_property)}) != candidates length ({len(result)})", file=sys.stderr)
+                        print(f"[WARNING] response.text: {text_from_property[:100]}", file=sys.stderr)
+                        print(f"[WARNING] Using candidates result (longer/more complete)", file=sys.stderr)
+                
+                if not result:
+                    result = str(response)
+                    print(f"[DEBUG] Using str(response) (last resort)", file=sys.stderr)
+                
+                # Clean and validate
+                if result:
+                    result = result.strip()
+                
+                print(f"[DEBUG] Result type: {type(result)}", file=sys.stderr)
+                print(f"[DEBUG] Result length: {len(str(result)) if result else 0}", file=sys.stderr)
+                print(f"[DEBUG] Result is None: {result is None}", file=sys.stderr)
+                print(f"[DEBUG] Result is empty: {not result or len(str(result)) == 0}", file=sys.stderr)
+                print(f"[DEBUG] Full result content:\n{result}", file=sys.stderr)
+                print(f"[DEBUG] First 200 chars: {str(result)[:200] if result else 'None'}", file=sys.stderr)
+                print(f"[DEBUG] Last 200 chars: {str(result)[-200:] if result and len(str(result)) > 200 else str(result)}", file=sys.stderr)
+                print("[DEBUG] ===========================================", file=sys.stderr)
+                print("="*80 + "\n", file=sys.stderr)
+                sys.stderr.flush()
+                
+                if not result or len(str(result)) == 0:
+                    raise Exception("Gemini returned empty response")
+                
+                return result
             except Exception as e:
                 error_str = str(e)
                 # Check for rate limit errors

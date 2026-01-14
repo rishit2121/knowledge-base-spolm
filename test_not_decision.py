@@ -4,25 +4,25 @@ import json
 from datetime import datetime
 import time
 
-# Production API URL
-API_URL = "https://knowledge-base-spolm.vercel.app"
+# API URL - Change to localhost for local testing
+API_URL = "http://localhost:8000"  # Local
+# API_URL = "https://knowledge-base-spolm.vercel.app"  # Production
 
 
-def test_not_decision():
+def test_not_decision_only():
     """
     Test that redundant runs are rejected (NOT decision).
     
-    Flow:
-    1. Add a run (should be ADD)
-    2. Add the same/similar run again (should be NOT)
+    This test assumes a run already exists in the database.
+    It will try to add the same run again (should be NOT).
     """
     print("\n" + "="*70)
     print("TEST: NOT Decision - Redundant Run Rejection")
     print("="*70)
     print(f"API URL: {API_URL}\n")
     
-    # Step 1: Add first run (should be ADD)
-    print("📝 Step 1: Adding first run (should be ADD)")
+    # Step 1: Add a run (this should already exist, but we'll add it to ensure it's there)
+    print("📝 Step 1: Ensuring first run exists")
     print("-" * 70)
     
     first_run_payload = {
