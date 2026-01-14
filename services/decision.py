@@ -225,8 +225,18 @@ class DecisionLayer:
         # Call LLM with structured output
         try:
             decision_json = self.llm_service.make_decision(prompt)
-            # Log the raw LLM response for debugging
-            print(f"[DEBUG] LLM raw response: {decision_json}")
+            # Log the raw LLM response for debugging (to stderr so it shows in server console)
+            import sys
+            print("\n" + "="*80, file=sys.stderr)
+            print("[DEBUG] ========== LLM RAW RESPONSE ==========", file=sys.stderr)
+            print(f"[DEBUG] Type: {type(decision_json)}", file=sys.stderr)
+            print(f"[DEBUG] Length: {len(str(decision_json)) if decision_json else 0}", file=sys.stderr)
+            print(f"[DEBUG] Is None: {decision_json is None}", file=sys.stderr)
+            print(f"[DEBUG] Is Empty: {not decision_json or len(str(decision_json)) == 0}", file=sys.stderr)
+            print(f"[DEBUG] Full response:\n{decision_json}", file=sys.stderr)
+            print("[DEBUG] ========================================", file=sys.stderr)
+            print("="*80 + "\n", file=sys.stderr)
+            sys.stderr.flush()
         except Exception as e:
             # Fallback to ADD on LLM call error
             print(f"[ERROR] LLM call failed: {str(e)}")
@@ -242,7 +252,16 @@ class DecisionLayer:
         
         # Parse and validate decision
         try:
-            print(f"[DEBUG] Parsing decision JSON: {decision_json[:200]}...")  # Log first 200 chars
+            import sys
+            print("\n" + "="*80, file=sys.stderr)
+            print("[DEBUG] ========== PARSING DECISION JSON ==========", file=sys.stderr)
+            print(f"[DEBUG] Input type: {type(decision_json)}", file=sys.stderr)
+            print(f"[DEBUG] Input length: {len(str(decision_json)) if decision_json else 0}", file=sys.stderr)
+            print(f"[DEBUG] First 500 chars: {str(decision_json)[:500] if decision_json else 'None'}", file=sys.stderr)
+            print(f"[DEBUG] Full input:\n{decision_json}", file=sys.stderr)
+            print("[DEBUG] ===========================================", file=sys.stderr)
+            print("="*80 + "\n", file=sys.stderr)
+            sys.stderr.flush()
             # Try to extract JSON from response (in case LLM adds extra text)
             if isinstance(decision_json, str):
                 # Clean the response - remove markdown code blocks if present
@@ -258,30 +277,71 @@ class DecisionLayer:
                 # First try direct JSON parse
                 try:
                     decision_data = json.loads(cleaned)
-                except json.JSONDecodeError:
-                    # If that fails, try to extract JSON object
-                    # Match balanced braces
-                    brace_count = 0
-                    start_idx = cleaned.find('{')
-                    if start_idx != -1:
-                        for i in range(start_idx, len(cleaned)):
-                            if cleaned[i] == '{':
-                                brace_count += 1
-                            elif cleaned[i] == '}':
-                                brace_count -= 1
-                                if brace_count == 0:
-                                    extracted_json = cleaned[start_idx:i+1]
-                                    decision_data = json.loads(extracted_json)
-                                    break
-                        else:
-                            # Fallback: try regex for nested JSON
-                            json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned, re.DOTALL)
-                            if json_match:
-                                decision_data = json.loads(json_match.group(0))
+                except json.JSONDecodeError as e:
+                    # If JSON is incomplete, try to fix it
+                    print(f"[DEBUG] JSON parse error: {e}", file=sys.stderr)
+                    print(f"[DEBUG] Attempting to fix incomplete JSON...", file=sys.stderr)
+                    
+                    # Check if it's missing closing brace
+                    if cleaned.count('{') > cleaned.count('}'):
+                        # Missing closing brace - try to complete it
+                        if '"reason"' not in cleaned:
+                            # Add missing reason field and closing brace
+                            if cleaned.rstrip().endswith('null'):
+                                cleaned = cleaned.rstrip() + ',\n  "reason": "Decision made"'
+                            elif not cleaned.rstrip().endswith(','):
+                                cleaned = cleaned.rstrip() + ',\n  "reason": "Decision made"'
+                            cleaned = cleaned + '\n}'
+                            print(f"[DEBUG] Attempted fix: {cleaned}", file=sys.stderr)
+                            try:
+                                decision_data = json.loads(cleaned)
+                                print(f"[DEBUG] Fixed JSON successfully!", file=sys.stderr)
+                            except:
+                                pass
+                    
+                    # If still failing, try to extract what we can
+                    if 'decision_data' not in locals():
+                        # Try to extract JSON object with balanced braces
+                        brace_count = 0
+                        start_idx = cleaned.find('{')
+                        if start_idx != -1:
+                            for i in range(start_idx, len(cleaned)):
+                                if cleaned[i] == '{':
+                                    brace_count += 1
+                                elif cleaned[i] == '}':
+                                    brace_count -= 1
+                                    if brace_count == 0:
+                                        extracted_json = cleaned[start_idx:i+1]
+                                        try:
+                                            decision_data = json.loads(extracted_json)
+                                            break
+                                        except:
+                                            continue
                             else:
-                                raise json.JSONDecodeError("Could not extract JSON from response", cleaned, 0)
-                    else:
-                        raise json.JSONDecodeError("No JSON object found in response", cleaned, 0)
+                                # If no balanced JSON found, try to parse what we have
+                                # Extract decision field even if JSON is incomplete
+                                decision_match = re.search(r'"decision"\s*:\s*"([^"]+)"', cleaned)
+                                if decision_match:
+                                    decision_value = decision_match.group(1)
+                                    print(f"[DEBUG] Extracted decision from incomplete JSON: {decision_value}", file=sys.stderr)
+                                    # Create minimal valid JSON
+                                    decision_data = {
+                                        "decision": decision_value,
+                                        "target_run_id": None,
+                                        "reason": "Extracted from incomplete response"
+                                    }
+                                else:
+                                    # Fallback: try regex for nested JSON
+                                    json_match = re.search(r'\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\}', cleaned, re.DOTALL)
+                                    if json_match:
+                                        try:
+                                            decision_data = json.loads(json_match.group(0))
+                                        except:
+                                            raise json.JSONDecodeError("Could not extract JSON from response", cleaned, 0)
+                                    else:
+                                        raise json.JSONDecodeError("Could not extract JSON from response", cleaned, 0)
+                        else:
+                            raise json.JSONDecodeError("No JSON object found in response", cleaned, 0)
             else:
                 decision_data = decision_json
             
@@ -348,45 +408,31 @@ class DecisionLayer:
             for r in similar_runs
         ])
         
-        prompt = f"""You are deciding whether to store a new agent run in long-term memory.
+        # Build concise prompt to reduce token usage
+        similar_runs_summary = ""
+        if similar_runs:
+            # Only include essential info to save tokens
+            similar_runs_summary = "\n".join([
+                f"Run {r['run_id'][:12]}: {r['outcome']} (sim: {r['similarity']:.2f})"
+                for r in similar_runs[:2]  # Only top 2
+            ])
+        else:
+            similar_runs_summary = "None"
+        
+        # Much shorter prompt
+        prompt = f"""Decide: store this agent run in memory?
 
-NEW RUN:
-Task: {task_text}
-Summary: {current_summary}
-Outcome: {outcome}
-References: {references_count}
-Artifacts: {artifacts_count}
+New: Task="{task_text[:80]}", Outcome={outcome}
+Similar: {similar_runs_summary}
 
-SIMILAR EXISTING RUNS:
-{similar_runs_text if similar_runs else "None found"}
+Choose: ADD (new info), NOT (redundant), REPLACE (better), MERGE (complementary)
 
-Choose exactly ONE action:
-
-ADD: The new run adds valuable, non-redundant information
-NOT: The new run is redundant or adds little value compared to existing runs
-REPLACE: The new run is a better version of an existing run (specify target_run_id)
-MERGE: The new run is similar but complementary to an existing run (specify target_run_id)
-
-Prioritize:
-- Correctness and usefulness
-- Avoiding redundancy
-- Preserving valuable patterns
-- Replacing outdated information when appropriate
-
-CRITICAL: You MUST respond with ONLY valid JSON. No markdown, no code blocks, no explanations outside the JSON. Start with {{ and end with }}.
-
-Required JSON format (copy this exactly and fill in values):
+Return ONLY this JSON (complete all fields):
 {{
-  "decision": "ADD",
+  "decision": "NOT",
   "target_run_id": null,
-  "reason": "brief explanation"
-}}
-
-Valid decision values: "ADD", "NOT", "REPLACE", "MERGE"
-- For REPLACE or MERGE: set target_run_id to the run_id from SIMILAR EXISTING RUNS above
-- For ADD or NOT: set target_run_id to null
-
-IMPORTANT: Return ONLY the JSON object, nothing else. No markdown formatting, no code blocks."""
+  "reason": "brief reason"
+}}"""
         
         return prompt
     
