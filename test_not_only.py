@@ -27,31 +27,31 @@ def test_not_decision_only():
     # Use the exact same task and similar structure
     run_payload = {
         "run_id": f"test_not_redundant_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-        "agent_id": "test_agent_not",
-        "user_task": "Generate a comprehensive user authentication system with JWT tokens",
+        "agent_id": "hotel_agent",
+        "user_task": "Create a REST API for booking hotel rooms per vacation destination",
         "status": "complete",
         "steps": [
             {
                 "step_id": "step1",
-                "step_name": "design_auth",
+                "step_name": "hotel_auth",
                 "step_type": "llm_call",
                 "step_input": {
                     "goal": "Design authentication system"
                 },
                 "step_output": {
-                    "data": "Designed JWT-based authentication with refresh tokens"
+                    "data": "User logged in"
                 }
             },
             {
                 "step_id": "step2",
-                "step_name": "implement_auth",
+                "step_name": "find_hotel",
                 "step_type": "tool_call",
                 "step_output": {
-                    "data": "Implemented authentication endpoints"
+                    "data": "Found nearby hotels"
                 }
             }
         ],
-        "final_output": "Authentication system created successfully",
+        "final_output": "Hotels booked successfully",
         "duration": 5000
     }
     
