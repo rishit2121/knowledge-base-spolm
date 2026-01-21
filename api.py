@@ -4,11 +4,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
 from models.run import RunPayload
-from models.retrieval import RetrievalRequest, RetrievalResponse
+from models.retrieval import RetrievalRequest, RetrievalResponse, RetrieveAllResponse, RunDetail
 from memory_builder import MemoryBuilder
 from memory_retrieval import MemoryRetrieval
 from db.connection import close_neo4j_driver
 import config
+from typing import Optional
 
 
 @asynccontextmanager
@@ -125,6 +126,45 @@ async def retrieve_memory(request: RetrievalRequest):
         retrieval = get_memory_retrieval()
         response = retrieval.retrieve(request)
         return response
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/retrieve_all", response_model=RetrieveAllResponse)
+async def retrieve_all_runs(agent_id: Optional[str] = None, limit: Optional[int] = None):
+    """
+    Retrieve all runs from the knowledge graph.
+    
+    Args:
+        agent_id: Optional filter by agent ID
+        limit: Optional limit on number of runs to return
+        
+    Returns:
+        All runs with their full details
+    """
+    try:
+        retrieval = get_memory_retrieval()
+        runs_data = retrieval.retrieve_all(agent_id=agent_id, limit=limit)
+        
+        # Convert to RunDetail models
+        runs = [
+            RunDetail(
+                run_id=run["run_id"],
+                agent_id=run["agent_id"],
+                summary=run["summary"],
+                outcome=run["outcome"],
+                run_tree=run["run_tree"],
+                references=run["references"],
+                artifacts=run["artifacts"],
+                created_at=run["created_at"]
+            )
+            for run in runs_data
+        ]
+        
+        return RetrieveAllResponse(
+            runs=runs,
+            total_count=len(runs)
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

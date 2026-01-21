@@ -280,6 +280,94 @@ class MemoryRetrieval:
         
         return round(confidence, 2)
     
+    def retrieve_all(self, agent_id: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        """
+        Retrieve all runs from the knowledge graph.
+        
+        Args:
+            agent_id: Optional filter by agent ID
+            limit: Optional limit on number of runs to return
+            
+        Returns:
+            List of run details with full context
+        """
+        with self.driver.session() as session:
+            # Build WHERE clause with optional filters
+            where_conditions = ["(r.status IS NULL OR r.status = 'active')"]
+            if agent_id:
+                where_conditions.append("r.agent_id = $agent_id")
+            
+            where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
+            limit_clause = f"LIMIT {limit}" if limit else ""
+            
+            query = f"""
+                MATCH (r:Run)
+                {where_clause}
+                OPTIONAL MATCH (r)-[:READS]->(ref:Reference)
+                OPTIONAL MATCH (r)-[:WRITES]->(a:Artifact)
+                OPTIONAL MATCH (r)-[:ENDED_WITH]->(o:Outcome)
+                RETURN r.id AS run_id,
+                       r.agent_id AS agent_id,
+                       r.summary AS summary,
+                       r.run_tree AS run_tree,
+                       r.created_at AS created_at,
+                       collect(DISTINCT {{
+                           id: ref.id,
+                           type: ref.type,
+                           source_ref: ref.source_ref
+                       }}) AS references,
+                       collect(DISTINCT {{
+                           id: a.id,
+                           type: a.type,
+                           hash: a.hash
+                       }}) AS artifacts,
+                       o.label AS outcome
+                ORDER BY r.created_at DESC
+                {limit_clause}
+            """
+            
+            params = {}
+            if agent_id:
+                params["agent_id"] = agent_id
+            
+            result = session.run(query, **params)
+            
+            runs = []
+            for record in result:
+                # Filter out None values from collections
+                references = [r for r in (record["references"] or []) if r.get("id")]
+                artifacts = [a for a in (record["artifacts"] or []) if a.get("id")]
+                
+                # Parse run_tree JSON back to dict
+                run_tree = None
+                if record["run_tree"]:
+                    try:
+                        run_tree = json.loads(record["run_tree"])
+                    except (json.JSONDecodeError, TypeError):
+                        run_tree = None
+                
+                # Format created_at if it exists
+                created_at = None
+                if record["created_at"]:
+                    if isinstance(record["created_at"], str):
+                        created_at = record["created_at"]
+                    else:
+                        # If it's a datetime object, convert to ISO string
+                        created_at = str(record["created_at"])
+                
+                runs.append({
+                    "run_id": record["run_id"],
+                    "agent_id": record["agent_id"],
+                    "summary": record["summary"],
+                    "outcome": record["outcome"] or "unknown",
+                    "run_tree": run_tree,
+                    "references": references,
+                    "artifacts": artifacts,
+                    "created_at": created_at
+                })
+            
+            return runs
+    
     def _cosine_similarity(self, vec1: List[float], vec2: List[float]) -> float:
         """Calculate cosine similarity between two vectors."""
         v1 = np.array(vec1)

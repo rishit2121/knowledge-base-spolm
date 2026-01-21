@@ -30,3 +30,21 @@ class RetrievalResponse(BaseModel):
     confidence: float
     query_embedding: Optional[List[float]] = None
 
+
+class RunDetail(BaseModel):
+    """Detailed information about a run."""
+    run_id: str
+    agent_id: Optional[str]
+    summary: str
+    outcome: str
+    run_tree: Optional[Dict[str, Any]] = None
+    references: List[Dict[str, Any]]
+    artifacts: List[Dict[str, Any]]
+    created_at: Optional[str] = None
+
+
+class RetrieveAllResponse(BaseModel):
+    """Response from retrieve_all endpoint."""
+    runs: List[RunDetail]
+    total_count: int
+
