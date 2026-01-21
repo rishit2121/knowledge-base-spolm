@@ -59,10 +59,21 @@ def get_memory_retrieval():
 @app.get("/")
 async def root():
     """Health check endpoint."""
+    # Debug: Show Neo4j URI (masked for security)
+    neo4j_uri = config.Config.NEO4J_URI
+    # Mask the instance ID for security
+    if "databases.neo4j.io" in neo4j_uri:
+        parts = neo4j_uri.split("databases.neo4j.io")
+        masked_uri = "neo4j+s://*****.databases.neo4j.io" if parts[0].startswith("neo4j+s://") else "neo4j://*****.databases.neo4j.io"
+    else:
+        masked_uri = neo4j_uri.split("@")[-1] if "@" in neo4j_uri else "localhost"
+    
     return {
         "status": "healthy",
         "service": "Knowledge Base API",
-        "version": "1.0.0"
+        "version": "1.0.0",
+        "neo4j_uri_format": masked_uri,
+        "neo4j_user": config.Config.NEO4J_USER
     }
 
 

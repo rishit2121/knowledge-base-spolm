@@ -5,7 +5,7 @@ from datetime import datetime
 import time
 
 # API URL - localhost for local testing
-API_URL = "http://localhost:8000"
+API_URL = "https://knowledge-base-spolm.vercel.app"  # Production
 
 
 def test_not_decision_only():
