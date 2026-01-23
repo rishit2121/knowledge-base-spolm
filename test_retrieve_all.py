@@ -5,7 +5,7 @@ from typing import Dict, Any, Optional
 
 
 def test_retrieve_all(
-    api_url: str = "http://localhost:8000",
+    api_url: str = "https://knowledge-base-spolm.vercel.app",
     agent_id: Optional[str] = None,
     limit: Optional[int] = None
 ):

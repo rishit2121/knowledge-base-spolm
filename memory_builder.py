@@ -43,6 +43,12 @@ class MemoryBuilder:
             Dictionary with processing results
         """
         try:
+            # Step 0: Create User and Agent nodes (if user_id provided)
+            user_id = payload.user_id
+            if user_id:
+                self._upsert_user(user_id)
+            self._upsert_agent(payload.agent_id, user_id)
+            
             # Step 1: Task upsert
             task_text = payload.get_task_text()
             if not task_text:
@@ -68,7 +74,9 @@ class MemoryBuilder:
                     task_text=task_text,
                     outcome=outcome,
                     references=[{"type": r.type, "source_ref": r.source_ref} for r in references],
-                    artifacts=[{"type": a.type, "hash": a.hash} for a in artifacts]
+                    artifacts=[{"type": a.type, "hash": a.hash} for a in artifacts],
+                    agent_id=payload.agent_id,
+                    user_id=payload.user_id
                 )
             except Exception as e:
                 import traceback
@@ -80,12 +88,17 @@ class MemoryBuilder:
             if decision.decision == "NOT":
                 # Store decision for observability but don't add run
                 self.decision_layer.store_decision(decision)
-                return {
+                result = {
                     "success": True,
                     "decision": "NOT",
                     "reason": decision.reason,
-                    "message": "Run not added to memory (redundant or low value)"
+                    "message": "Run not added to memory (redundant or low value)",
+                    "similarity_score": decision.similarity_score
                 }
+                # Include similar runs information
+                if decision.similar_runs:
+                    result["similar_runs"] = decision.similar_runs
+                return result
             
             # For ADD, REPLACE, MERGE: proceed with storage
             reference_ids = []
@@ -141,6 +154,55 @@ class MemoryBuilder:
                 "success": False,
                 "error": f"{error_str}\n\nTraceback:\n{error_traceback}"
             }
+    
+    def _upsert_user(self, user_id: str) -> str:
+        """
+        Create or get User node.
+        
+        Args:
+            user_id: The user identifier
+            
+        Returns:
+            The user_id (for consistency with other upsert methods)
+        """
+        if not user_id:
+            return None
+        
+        with self.driver.session() as session:
+            session.run("""
+                MERGE (u:User {user_id: $user_id})
+                ON CREATE SET u.created_at = datetime()
+            """, user_id=user_id)
+        
+        return user_id
+    
+    def _upsert_agent(self, agent_id: str, user_id: Optional[str] = None) -> str:
+        """
+        Create or get Agent node and link to User if user_id provided.
+        
+        Args:
+            agent_id: The agent identifier
+            user_id: Optional user ID to link agent to user
+            
+        Returns:
+            The agent_id
+        """
+        with self.driver.session() as session:
+            # Create Agent node
+            session.run("""
+                MERGE (a:Agent {agent_id: $agent_id})
+                ON CREATE SET a.created_at = datetime()
+            """, agent_id=agent_id)
+            
+            # Link to User if user_id provided
+            if user_id:
+                session.run("""
+                    MATCH (u:User {user_id: $user_id})
+                    MATCH (a:Agent {agent_id: $agent_id})
+                    MERGE (u)-[:HAS_AGENT]->(a)
+                """, user_id=user_id, agent_id=agent_id)
+        
+        return agent_id
     
     def _upsert_task(self, task_text: str) -> str:
         """
@@ -246,6 +308,13 @@ class MemoryBuilder:
                 MATCH (r:Run {id: $run_id})
                 MERGE (t)-[:TRIGGERED]->(r)
             """, task_id=task_id, run_id=run_id)
+            
+            # Link to Agent (hierarchy: Agent -> Run)
+            session.run("""
+                MATCH (a:Agent {agent_id: $agent_id})
+                MATCH (r:Run {id: $run_id})
+                MERGE (a)-[:EXECUTED]->(r)
+            """, agent_id=payload.agent_id, run_id=run_id)
             
             # Link to References
             for ref_id in reference_ids:

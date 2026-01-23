@@ -40,24 +40,58 @@ class DecisionLayer:
         task_text: str,
         outcome: str,
         references: List[Dict[str, Any]],
-        artifacts: List[Dict[str, Any]]
+        artifacts: List[Dict[str, Any]],
+        agent_id: Optional[str] = None,
+        user_id: Optional[str] = None
     ) -> MemoryDecision:
         """
         Decide what to do with a new run.
         
+        Args:
+            run_id: The run ID
+            run_summary: Summary of the run
+            run_embedding: Embedding vector of the run summary
+            task_text: The task text
+            outcome: Outcome of the run
+            references: List of references
+            artifacts: List of artifacts
+            agent_id: Agent ID to filter similar runs (only compare within same agent)
+            user_id: User ID to filter similar runs (only compare within same user)
+        
         Returns:
             MemoryDecision with decision, target_run_id (if REPLACE/MERGE), and reason
         """
-        # Stage 1: Find similar runs
-        similar_runs = self._find_similar_runs(run_embedding, top_k=3)
+        # Stage 1: Find similar runs (filtered by agent_id and user_id)
+        similar_runs = self._find_similar_runs(
+            run_embedding, 
+            top_k=3,
+            agent_id=agent_id,
+            user_id=user_id
+        )
         
-        # Stage 2: Deterministic pre-filter
+        # Stage 2: Deterministic pre-filter (only for very clear cases)
         deterministic_decision = self._deterministic_filter(similar_runs)
         if deterministic_decision:
+            import sys
+            print(f"[DECISION] Using deterministic filter: {deterministic_decision.decision}", file=sys.stderr)
+            sys.stderr.flush()
             deterministic_decision.run_id = run_id
+            # Include similar runs info
+            deterministic_decision.similar_runs = [
+                {
+                    "run_id": sr.run_id,
+                    "summary": sr.summary,
+                    "outcome": sr.outcome,
+                    "similarity": sr.similarity
+                }
+                for sr in similar_runs[:3]  # Top 3 similar runs
+            ]
             return deterministic_decision
         
-        # Stage 3: LLM judge for ambiguous cases
+        # Stage 3: LLM judge for ambiguous cases (most cases go here)
+        import sys
+        print(f"[DECISION] Passing to LLM judge (similarity range: {similar_runs[0].similarity:.3f} if similar_runs else 'N/A')", file=sys.stderr)
+        sys.stderr.flush()
         decision = self._llm_judge(
             run_summary=run_summary,
             task_text=task_text,
@@ -67,24 +101,74 @@ class DecisionLayer:
             similar_runs=similar_runs
         )
         decision.run_id = run_id
+        # Include similar runs info
+        decision.similar_runs = [
+            {
+                "run_id": sr.run_id,
+                "summary": sr.summary,
+                "outcome": sr.outcome,
+                "similarity": sr.similarity
+            }
+            for sr in similar_runs[:3]  # Top 3 similar runs
+        ]
+        import sys
+        print(f"[DECISION] LLM judge decision: {decision.decision}", file=sys.stderr)
+        sys.stderr.flush()
         return decision
     
     def _find_similar_runs(
         self,
         run_embedding: List[float],
-        top_k: int = 3
+        top_k: int = 3,
+        agent_id: Optional[str] = None,
+        user_id: Optional[str] = None
     ) -> List[SimilarRun]:
-        """Find similar runs using vector search."""
+        """
+        Find similar runs using vector search.
+        Only compares runs with the same agent_id and user_id.
+        """
         with self.driver.session() as session:
-            # Get all active runs (exclude superseded)
-            result = session.run("""
-                MATCH (r:Run)
-                WHERE r.embedding IS NOT NULL
-                  AND (r.status IS NULL OR r.status = 'active')
+            # Build query with filters for agent_id and user_id
+            where_clauses = [
+                "r.embedding IS NOT NULL",
+                "(r.status IS NULL OR r.status = 'active')"
+            ]
+            params = {}
+            
+            # Filter by user_id if provided (through User -> Agent -> Run hierarchy)
+            if user_id:
+                # Match through User -> Agent -> Run
+                match_clause = """
+                    MATCH (u:User {user_id: $user_id})-[:HAS_AGENT]->(a:Agent)-[:EXECUTED]->(r:Run)
+                """
+                params["user_id"] = user_id
+                # Also filter by agent_id if provided (to ensure same agent)
+                if agent_id:
+                    where_clauses.append("a.agent_id = $agent_id")
+                    params["agent_id"] = agent_id
+            elif agent_id:
+                # Filter by agent_id only (through Agent -> Run)
+                match_clause = """
+                    MATCH (a:Agent {agent_id: $agent_id})-[:EXECUTED]->(r:Run)
+                """
+                params["agent_id"] = agent_id
+            else:
+                # No filters - match all runs (backward compatibility)
+                match_clause = "MATCH (r:Run)"
+                # Still filter by agent_id if provided (direct property match)
+                if agent_id:
+                    where_clauses.append("r.agent_id = $agent_id")
+                    params["agent_id"] = agent_id
+            
+            query = f"""
+                {match_clause}
+                WHERE {' AND '.join(where_clauses)}
                 RETURN r.id AS run_id,
                        r.summary AS summary,
                        r.embedding AS embedding
-            """)
+            """
+            
+            result = session.run(query, **params)
             
             expected_dim = len(run_embedding)
             runs_with_similarity = []
@@ -161,6 +245,7 @@ class DecisionLayer:
                 decision="ADD",
                 reason="No similar runs found in memory",
                 similarity_score=None,
+                similar_runs=None,
                 timestamp=datetime.now(timezone.utc)
             )
         
@@ -173,17 +258,16 @@ class DecisionLayer:
                 decision="ADD",
                 reason=f"Similarity ({best_match.similarity:.2f}) below threshold ({self.LOW_SIMILARITY_THRESHOLD})",
                 similarity_score=best_match.similarity,
+                similar_runs=None,  # Not relevant for ADD
                 timestamp=datetime.now(timezone.utc)
             )
         
-        # Rule 3: Very high similarity + same structure -> MERGE (let LLM decide which is canonical)
-        if best_match.similarity > self.VERY_HIGH_SIMILARITY_THRESHOLD:
-            # Check if structure is similar (same number of references/artifacts)
-            # This is a simple heuristic - LLM will make final call
-            # Return None to let LLM judge decide
-            pass
+        # Rule 3: Very high similarity (>0.95) - still let LLM decide (could be REPLACE or MERGE)
+        # We don't make deterministic decisions for high similarity - LLM needs to judge
+        # whether it's truly redundant (NOT), better version (REPLACE), or complementary (MERGE)
         
-        # All other cases need LLM judge
+        # All cases with similarity >= LOW_SIMILARITY_THRESHOLD go to LLM judge
+        # This ensures LLM makes nuanced decisions, not just based on similarity scores
         return None
     
     def _llm_judge(
@@ -247,6 +331,7 @@ class DecisionLayer:
                 decision="ADD",
                 reason=f"Error calling LLM: {str(e)}. Defaulting to ADD.",
                 similarity_score=similar_runs[0].similarity if similar_runs else None,
+                similar_runs=None,
                 timestamp=datetime.now(timezone.utc)
             )
         
@@ -366,12 +451,14 @@ class DecisionLayer:
                         decision = "ADD"  # Fallback to ADD if no target
                         target_run_id = None
             
+            # Return the decision (for all decision types: ADD, NOT, REPLACE, MERGE)
             return MemoryDecision(
                 run_id="",  # Will be set by caller
                 decision=decision,
                 target_run_id=target_run_id,
                 reason=reason,
                 similarity_score=similar_runs[0].similarity if similar_runs else None,
+                similar_runs=None,  # Will be set by caller
                 timestamp=datetime.now(timezone.utc)
             )
             
@@ -386,6 +473,7 @@ class DecisionLayer:
                 decision="ADD",
                 reason=f"Error in LLM decision: {str(e)}. Defaulting to ADD.",
                 similarity_score=similar_runs[0].similarity if similar_runs else None,
+                similar_runs=None,
                 timestamp=datetime.now(timezone.utc)
             )
     

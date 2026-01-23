@@ -87,6 +87,9 @@ def initialize_schema() -> None:
             session.run("CREATE INDEX artifact_id_index IF NOT EXISTS FOR (a:Artifact) ON (a.id)")
             session.run("CREATE INDEX run_created_at_index IF NOT EXISTS FOR (r:Run) ON (r.created_at)")
             session.run("CREATE INDEX outcome_label_index IF NOT EXISTS FOR (o:Outcome) ON (o.label)")
+            # User and Agent indexes
+            session.run("CREATE INDEX user_id_index IF NOT EXISTS FOR (u:User) ON (u.user_id)")
+            session.run("CREATE INDEX agent_id_index IF NOT EXISTS FOR (a:Agent) ON (a.agent_id)")
         
         # Create constraints for uniqueness
         try:
@@ -96,6 +99,9 @@ def initialize_schema() -> None:
             session.run("CREATE CONSTRAINT artifact_id_unique IF NOT EXISTS FOR (a:Artifact) REQUIRE a.id IS UNIQUE")
             # Outcome nodes use label as identifier, so we create a constraint on label
             session.run("CREATE CONSTRAINT outcome_label_unique IF NOT EXISTS FOR (o:Outcome) REQUIRE o.label IS UNIQUE")
+            # User and Agent constraints
+            session.run("CREATE CONSTRAINT user_id_unique IF NOT EXISTS FOR (u:User) REQUIRE u.user_id IS UNIQUE")
+            session.run("CREATE CONSTRAINT agent_id_unique IF NOT EXISTS FOR (a:Agent) REQUIRE a.agent_id IS UNIQUE")
             print("✓ Constraints created successfully")
         except Exception as e:
             print(f"⚠ Some constraints may already exist: {e}")
