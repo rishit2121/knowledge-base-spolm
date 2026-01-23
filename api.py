@@ -131,11 +131,12 @@ async def retrieve_memory(request: RetrievalRequest):
 
 
 @app.get("/retrieve_all", response_model=RetrieveAllResponse)
-async def retrieve_all_runs(agent_id: Optional[str] = None, limit: Optional[int] = None):
+async def retrieve_all_runs(user_id: Optional[str] = None, agent_id: Optional[str] = None, limit: Optional[int] = None):
     """
     Retrieve all runs from the knowledge graph.
     
     Args:
+        user_id: Optional filter by user ID
         agent_id: Optional filter by agent ID
         limit: Optional limit on number of runs to return
         
@@ -144,12 +145,13 @@ async def retrieve_all_runs(agent_id: Optional[str] = None, limit: Optional[int]
     """
     try:
         retrieval = get_memory_retrieval()
-        runs_data = retrieval.retrieve_all(agent_id=agent_id, limit=limit)
+        runs_data = retrieval.retrieve_all(user_id=user_id, agent_id=agent_id, limit=limit)
         
         # Convert to RunDetail models
         runs = [
             RunDetail(
                 run_id=run["run_id"],
+                user_id=run.get("user_id"),
                 agent_id=run["agent_id"],
                 summary=run["summary"],
                 outcome=run["outcome"],

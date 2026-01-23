@@ -6,6 +6,7 @@ from pydantic import BaseModel
 class RetrievalRequest(BaseModel):
     """Request for memory retrieval."""
     task_text: str
+    user_id: Optional[str] = None  # Filter by user ID
     agent_id: Optional[str] = None
     context: Optional[str] = None
     top_k: int = 5
@@ -14,6 +15,7 @@ class RetrievalRequest(BaseModel):
 class RelatedRun(BaseModel):
     """Information about a related run."""
     run_id: str
+    user_id: Optional[str] = None
     agent_id: str
     summary: str
     outcome: str
@@ -34,6 +36,7 @@ class RetrievalResponse(BaseModel):
 class RunDetail(BaseModel):
     """Detailed information about a run."""
     run_id: str
+    user_id: Optional[str] = None
     agent_id: Optional[str]
     summary: str
     outcome: str

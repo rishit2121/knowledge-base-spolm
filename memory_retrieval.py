@@ -42,6 +42,7 @@ class MemoryRetrieval:
         similar_runs = self._vector_search_runs(
             query_embedding,
             top_k=request.top_k,
+            user_id=request.user_id,
             agent_id=request.agent_id
         )
         
@@ -52,6 +53,7 @@ class MemoryRetrieval:
             if expanded:
                 related_runs.append(RelatedRun(
                     run_id=expanded["run_id"],
+                    user_id=expanded.get("user_id"),
                     agent_id=expanded["agent_id"],
                     summary=expanded["summary"],
                     outcome=expanded["outcome"],
@@ -78,6 +80,7 @@ class MemoryRetrieval:
         self,
         query_embedding: List[float],
         top_k: int,
+        user_id: str = None,
         agent_id: str = None
     ) -> List[Dict[str, Any]]:
         """
@@ -86,23 +89,43 @@ class MemoryRetrieval:
         Returns list of dicts with run_id and similarity score.
         """
         with self.driver.session() as session:
-            # Build query with optional agent filter
-            agent_filter = "AND r.agent_id = $agent_id" if agent_id else ""
+            # Build query with optional filters
+            params = {}
             
-            # Manual cosine similarity calculation
-            # For Neo4j 5.11+ with vector indexes, use: db.index.vector.queryNodes
+            if user_id and agent_id:
+                # Both filters: User -> Agent (with specific agent_id) -> Run
+                match_clause = """
+                    MATCH (u:User {user_id: $user_id})-[:HAS_AGENT]->(a:Agent {agent_id: $agent_id})-[:EXECUTED]->(r:Run)
+                """
+                params["user_id"] = user_id
+                params["agent_id"] = agent_id
+            elif user_id:
+                # Filter by user_id only: User -> Agent -> Run
+                match_clause = """
+                    MATCH (u:User {user_id: $user_id})-[:HAS_AGENT]->(a:Agent)-[:EXECUTED]->(r:Run)
+                """
+                params["user_id"] = user_id
+            elif agent_id:
+                # Filter by agent_id only: Agent -> Run
+                match_clause = """
+                    MATCH (a:Agent {agent_id: $agent_id})-[:EXECUTED]->(r:Run)
+                """
+                params["agent_id"] = agent_id
+            else:
+                # No filters: just Run nodes
+                match_clause = "MATCH (r:Run)"
+            
+            # Build WHERE clause
+            where_clauses = [
+                "r.embedding IS NOT NULL",
+                "(r.status IS NULL OR r.status = 'active')"
+            ]
             
             query = f"""
-                MATCH (r:Run)
-                WHERE r.embedding IS NOT NULL
-                  AND (r.status IS NULL OR r.status = 'active')
-                  {agent_filter}
-                RETURN r.id AS run_id, r.embedding AS embedding
+                {match_clause}
+                WHERE {' AND '.join(where_clauses)}
+                RETURN DISTINCT r.id AS run_id, r.embedding AS embedding
             """
-            
-            params = {}
-            if agent_id:
-                params["agent_id"] = agent_id
             
             result = session.run(query, **params)
             
@@ -141,10 +164,12 @@ class MemoryRetrieval:
                 OPTIONAL MATCH (r)-[:READS]->(ref:Reference)
                 OPTIONAL MATCH (r)-[:WRITES]->(a:Artifact)
                 OPTIONAL MATCH (r)-[:ENDED_WITH]->(o:Outcome)
+                OPTIONAL MATCH (u:User)-[:HAS_AGENT]->(a2:Agent)-[:EXECUTED]->(r)
                 RETURN r.id AS run_id,
                        r.agent_id AS agent_id,
                        r.summary AS summary,
                        r.run_tree AS run_tree,
+                       u.user_id AS user_id,
                        collect(DISTINCT {
                            id: ref.id,
                            type: ref.type,
@@ -176,6 +201,7 @@ class MemoryRetrieval:
             
             return {
                 "run_id": record["run_id"],
+                "user_id": record["user_id"],
                 "agent_id": record["agent_id"],
                 "summary": record["summary"],
                 "outcome": record["outcome"] or "unknown",
@@ -280,11 +306,12 @@ class MemoryRetrieval:
         
         return round(confidence, 2)
     
-    def retrieve_all(self, agent_id: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def retrieve_all(self, user_id: Optional[str] = None, agent_id: Optional[str] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         """
         Retrieve all runs from the knowledge graph.
         
         Args:
+            user_id: Optional filter by user ID
             agent_id: Optional filter by agent ID
             limit: Optional limit on number of runs to return
             
@@ -292,43 +319,57 @@ class MemoryRetrieval:
             List of run details with full context
         """
         with self.driver.session() as session:
-            # Build WHERE clause with optional filters
-            where_conditions = ["(r.status IS NULL OR r.status = 'active')"]
-            if agent_id:
-                where_conditions.append("r.agent_id = $agent_id")
+            # Build query with optional filters
+            filters = []
+            params = {}
             
+            if user_id:
+                # Filter by user_id through User -> Agent -> Run hierarchy
+                filters.append("""
+                    MATCH (u:User {user_id: $user_id})-[:HAS_AGENT]->(a:Agent)-[:EXECUTED]->(r)
+                """)
+                params["user_id"] = user_id
+            elif agent_id:
+                # Filter by agent_id directly
+                filters.append("""
+                    MATCH (a:Agent {agent_id: $agent_id})-[:EXECUTED]->(r)
+                """)
+                params["agent_id"] = agent_id
+            else:
+                filters.append("MATCH (r:Run)")
+            
+            # Build WHERE clause
+            where_conditions = ["(r.status IS NULL OR r.status = 'active')"]
             where_clause = "WHERE " + " AND ".join(where_conditions) if where_conditions else ""
             limit_clause = f"LIMIT {limit}" if limit else ""
             
             query = f"""
-                MATCH (r:Run)
+                {' '.join(filters)}
                 {where_clause}
                 OPTIONAL MATCH (r)-[:READS]->(ref:Reference)
-                OPTIONAL MATCH (r)-[:WRITES]->(a:Artifact)
+                OPTIONAL MATCH (r)-[:WRITES]->(a2:Artifact)
                 OPTIONAL MATCH (r)-[:ENDED_WITH]->(o:Outcome)
-                RETURN r.id AS run_id,
+                OPTIONAL MATCH (u2:User)-[:HAS_AGENT]->(a3:Agent)-[:EXECUTED]->(r)
+                RETURN DISTINCT r.id AS run_id,
                        r.agent_id AS agent_id,
                        r.summary AS summary,
                        r.run_tree AS run_tree,
                        r.created_at AS created_at,
+                       u2.user_id AS user_id,
                        collect(DISTINCT {{
                            id: ref.id,
                            type: ref.type,
                            source_ref: ref.source_ref
                        }}) AS references,
                        collect(DISTINCT {{
-                           id: a.id,
-                           type: a.type,
-                           hash: a.hash
+                           id: a2.id,
+                           type: a2.type,
+                           hash: a2.hash
                        }}) AS artifacts,
                        o.label AS outcome
                 ORDER BY r.created_at DESC
                 {limit_clause}
             """
-            
-            params = {}
-            if agent_id:
-                params["agent_id"] = agent_id
             
             result = session.run(query, **params)
             
@@ -357,6 +398,7 @@ class MemoryRetrieval:
                 
                 runs.append({
                     "run_id": record["run_id"],
+                    "user_id": record["user_id"],
                     "agent_id": record["agent_id"],
                     "summary": record["summary"],
                     "outcome": record["outcome"] or "unknown",

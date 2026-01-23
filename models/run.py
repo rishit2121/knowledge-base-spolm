@@ -18,6 +18,7 @@ class RunPayload(BaseModel):
     run_id: str
     start_timestamp: Optional[str] = None
     agent_id: str
+    user_id: Optional[str] = None  # User ID for hierarchy
     user_task: Optional[str] = None  # New format
     metadata: Optional[Dict[str, Any]] = None
     steps: Optional[List[Dict[str, Any]]] = None

@@ -11,6 +11,7 @@ class MemoryDecision(BaseModel):
     target_run_id: Optional[str] = None  # For REPLACE and MERGE
     reason: str
     similarity_score: Optional[float] = None
+    similar_runs: Optional[list[dict]] = None  # List of similar runs that influenced the decision
     timestamp: datetime
 
 
