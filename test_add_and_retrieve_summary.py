@@ -8,8 +8,8 @@ import json
 import uuid
 from datetime import datetime
 
-API_URL = "https://knowledge-base-spolm.vercel.app"
-# API_URL = "http://localhost:8000"  # Uncomment for local testing
+# API_URL = "https://knowledge-base-spolm.vercel.app"
+API_URL = "http://localhost:8000"  # Local testing
 
 USER_ID = "rishit.agrawal121@gmail.com"
 AGENT_ID = "IKuz0GgesfFtbA6mrD7J"
@@ -76,6 +76,16 @@ TASK_TEMPLATES = [
         ],
         "final_output": "Crystal web app with Redis caching and WebSocket chat",
         "metadata": {"language": "Crystal", "framework": "Kemal, Redis, HTTP/2"},
+    },
+    {
+        "user_task": "Develop a Nim systems programming application that implements a custom memory allocator using arena allocation, integrates with libuv for async I/O, and provides a zero-copy serialization format using flatbuffers.",
+        "steps": [
+            {"step_id": "step1", "step_name": "allocator", "step_type": "tool_call", "step_input": {"action": "Implement arena allocator"}, "step_output": {"data": "Memory allocator ready"}},
+            {"step_id": "step2", "step_name": "libuv", "step_type": "tool_call", "step_input": {"action": "Set up async event loop"}, "step_output": {"data": "Async I/O configured"}},
+            {"step_id": "step3", "step_name": "flatbuffers", "step_type": "tool_call", "step_input": {"action": "Generate serialization code"}, "step_output": {"data": "Zero-copy serialization"}},
+        ],
+        "final_output": "Nim systems app with custom allocator and async I/O",
+        "metadata": {"language": "Nim", "libraries": "libuv, flatbuffers"},
     },
 ]
 
