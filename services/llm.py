@@ -1,5 +1,7 @@
 """LLM service for summarization and analysis."""
-from typing import Dict, Any
+from typing import Dict, Any, Tuple
+import json
+import re
 import config
 import google.generativeai.types as genai_types
 
@@ -28,54 +30,113 @@ class LLMService:
             self.client = openai.OpenAI(api_key=config.Config.OPENAI_API_KEY)
             self.model = config.Config.OPENAI_CHAT_MODEL
     
-    def summarize_run(self, run_tree: Dict[str, Any], outcome: str) -> str:
+    def summarize_run(self, run_tree: Dict[str, Any], outcome: str) -> Tuple[str, str]:
         """
-        Summarize an agent run focusing on references, artifacts, and workflow.
-        
-        Args:
-            run_tree: The full run tree/map
-            outcome: The outcome of the run (success/failure/partial)
-            
-        Returns:
-            A 5-7 sentence summary
-        """
-        prompt = f"""Summarize this agent run in 5-7 sentences focusing on:
+        Summarize an agent run for memory storage and produce "why added" bullet points.
+        Summary: how well the run proceeded + important info for memory.
+        why_added: 2-4 short reasons this run is valuable to store (what future agents can learn from).
 
-1. What information was referenced (documents, schemas, API responses, prior runs)
-2. What was produced (schemas, plans, reports, code outputs)
-3. The overall workflow shape
-4. Why it succeeded or failed
+        Returns:
+            (summary_str, reason_added_str). reason_added_str is newline-separated bullet points.
+        """
+        prompt = f"""You are a summarizer for an agent run that will be stored in a knowledge graph. Output valid JSON only, with two keys:
+
+1. "summary": One short paragraph (2-4 sentences) that includes:
+   - How well the run proceeded (success/failure/partial, key metrics, notable issues or successes).
+   - Important information for memory (key decisions, findings, errors, outputs, or patterns worth remembering for future runs).
+
+2. "why_added": An array of 2-4 short bullet-point reasons explaining WHY this run is valuable to add to memory. These are the reasons a human would see when viewing "why was this run added?"—focus on the value of the run for future retrieval, e.g. "Successfully built a weather API with caching", "Demonstrated error-handling pattern for external APIs", "Useful reference for Node.js project setup". Do NOT mention "no similar runs" or decision logic; only the concrete value of this run.
 
 Run outcome: {outcome}
 
-Run tree:
+Full run log:
 {self._format_run_tree(run_tree)}
 
-Provide a concise, structured summary that would help an agent understand what happened in this run and what was learned."""
+Output only a single JSON object, no markdown fences or preamble. Example format:
+{{"summary": "The run succeeded...", "why_added": ["Reason one.", "Reason two.", "Reason three."]}}"""
 
         if self.provider == "gemini":
-            # Gemini model names need 'models/' prefix for GenerativeModel
             model_name = self.model if self.model.startswith("models/") else f"models/{self.model}"
             model = self.client.GenerativeModel(model_name)
             response = model.generate_content(
                 prompt,
                 generation_config={
                     "temperature": 0.3,
-                    "max_output_tokens": 500,
+                    "max_output_tokens": 600,
                 }
             )
-            return response.text.strip()
-        else:  # openai
+            raw = (response.text or "").strip()
+        else:
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant that summarizes agent runs for knowledge base storage."},
+                    {"role": "system", "content": "You are a helpful assistant. Respond with valid JSON only."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
-                max_tokens=500
+                max_tokens=600
             )
-            return response.choices[0].message.content.strip()
+            raw = response.choices[0].message.content.strip()
+
+        summary, reason_added_str = self._parse_summary_response(raw)
+        import os
+        if os.environ.get("DEBUG_KB"):
+            import sys
+            print(f"[DEBUG llm] raw response length={len(raw)}", file=sys.stderr)
+            print(f"[DEBUG llm] raw (first 500): {repr(raw[:500])}", file=sys.stderr)
+            print(f"[DEBUG llm] parsed summary length={len(summary)}, reason_added length={len(reason_added_str)}", file=sys.stderr)
+            print(f"[DEBUG llm] reason_added (first 300): {repr(reason_added_str[:300])}", file=sys.stderr)
+        return summary, reason_added_str
+
+    def _parse_summary_response(self, raw: str) -> Tuple[str, str]:
+        """Parse LLM JSON response into summary and newline-separated why_added bullets. Always returns at least one reason_added bullet."""
+        text = raw.strip() if raw else ""
+        if not text:
+            return "No summary generated.", "• Run added to memory for future retrieval."
+
+        # Strip markdown code fence if present
+        if text.startswith("```"):
+            text = re.sub(r"^```\w*\n?", "", text)
+            text = re.sub(r"\n?```\s*$", "", text).strip()
+        # Try to extract JSON object (Gemini sometimes adds preamble)
+        start = text.find("{")
+        if start >= 0:
+            end = text.rfind("}") + 1
+            if end > start:
+                text = text[start:end]
+
+        summary = ""
+        reason_added_str = ""
+        try:
+            data = json.loads(text)
+            summary = (data.get("summary") or "").strip()
+            why_list = data.get("why_added")
+            if isinstance(why_list, list) and why_list:
+                bullets = [
+                    "• " + (str(x).strip().lstrip("•-* "))
+                    for x in why_list
+                    if str(x).strip()
+                ]
+                reason_added_str = "\n".join(bullets) if bullets else ""
+            elif isinstance(why_list, str) and why_list.strip():
+                # Single string: split by newlines or periods into bullets
+                for line in why_list.replace("•", "\n").split("\n"):
+                    line = line.strip().lstrip("•-* ")
+                    if line:
+                        reason_added_str += ("• " + line + "\n") if not reason_added_str else ("• " + line + "\n")
+                reason_added_str = reason_added_str.strip()
+        except (json.JSONDecodeError, TypeError):
+            summary = text
+
+        if not summary:
+            summary = raw if raw else "No summary generated."
+        # Explicit fallback: always provide at least one "why added" bullet
+        if not reason_added_str.strip():
+            first_sentence = summary.split(". ")[0].strip()
+            if first_sentence and not first_sentence.endswith("."):
+                first_sentence += "."
+            reason_added_str = "• Run added to memory for future retrieval.\n• " + (first_sentence or "Summary stored for context.")
+        return summary, reason_added_str
     
     def _format_run_tree(self, run_tree: Dict[str, Any], indent: int = 0) -> str:
         """Format run tree for display in prompt."""

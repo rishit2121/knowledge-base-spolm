@@ -18,6 +18,7 @@ class RelatedRun(BaseModel):
     user_id: Optional[str] = None
     agent_id: str
     summary: str
+    reason_added: Optional[str] = None  # Why this run was added (bullet points for display)
     outcome: str
     run_tree: Optional[Dict[str, Any]] = None  # Full run tree/map for detailed retrieval
     references: List[Dict[str, Any]]
@@ -39,6 +40,7 @@ class RunDetail(BaseModel):
     user_id: Optional[str] = None
     agent_id: Optional[str]
     summary: str
+    reason_added: Optional[str] = None  # Why this run was added (bullet points for display)
     outcome: str
     run_tree: Optional[Dict[str, Any]] = None
     references: List[Dict[str, Any]]

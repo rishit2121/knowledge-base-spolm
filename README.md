@@ -22,6 +22,15 @@ This system implements a complete knowledge base infrastructure for storing agen
 [Memory Retrieval API]  ← Retrieves relevant context
 ```
 
+### Run summary
+
+When a run is added to the knowledge graph, an LLM (e.g. Gemini, configurable via `PROVIDER`) summarizes the full run log. The summary includes:
+
+1. **How well the run proceeded**: Success/failure/partial, key metrics, and notable issues or successes.
+2. **Important information for memory**: Key decisions, findings, errors, or outputs worth remembering for future runs.
+
+This summary is stored on the Run node and embedded for similarity search, so retrieval can surface relevant past runs by semantic similarity.
+
 ## Prerequisites
 
 Before setting up, ensure you have:

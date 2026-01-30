@@ -55,10 +55,10 @@ class MemoryBuilder:
                 raise ValueError("task_text or user_task must be provided")
             task_id = self._upsert_task(task_text)
             
-            # Step 2: Summarize run
+            # Step 2: Summarize run (summary + why_added for display as "reason_added")
             run_tree_dict = payload.get_run_tree()
             outcome = payload.get_outcome()
-            summary = self.llm_service.summarize_run(run_tree_dict, outcome)
+            summary, reason_added = self.llm_service.summarize_run(run_tree_dict, outcome)
             summary_embedding = self.embedding_service.embed(summary)
             
             # Step 3: Extract references and artifacts (needed for decision)
@@ -118,7 +118,9 @@ class MemoryBuilder:
             # Handle MERGE: mark canonical run (for now, keep both active)
             # Future: could aggregate metadata here
             
-            # Step 6: Create Run node and relationships
+            # Step 6: Create Run node and relationships (reason_added = LLM "why added"; fallback if empty)
+            if not (reason_added or "").strip():
+                reason_added = "• Run added to memory for future retrieval."
             run_id = self._create_run(
                 payload=payload,
                 summary=summary,
@@ -127,13 +129,14 @@ class MemoryBuilder:
                 reference_ids=reference_ids,
                 artifact_ids=artifact_ids,
                 run_tree_dict=run_tree_dict,
-                status="active"  # All new runs start as active
+                status="active",  # All new runs start as active
+                reason_added=reason_added
             )
             
             # Store decision for observability
             self.decision_layer.store_decision(decision)
             
-            return {
+            result = {
                 "success": True,
                 "decision": decision.decision,
                 "run_id": run_id,
@@ -141,8 +144,16 @@ class MemoryBuilder:
                 "references_count": len(reference_ids),
                 "artifacts_count": len(artifact_ids),
                 "target_run_id": decision.target_run_id,
-                "reason": decision.reason
+                "reason": decision.reason,
+                "summary": summary,
+                "reason_added": reason_added,
             }
+            import os
+            if os.environ.get("DEBUG_KB"):
+                import sys
+                print(f"[DEBUG memory_builder] reason_added length={len(reason_added or '')}", file=sys.stderr)
+                print(f"[DEBUG memory_builder] reason_added (first 300): {repr((reason_added or '')[:300])}", file=sys.stderr)
+            return result
             
         except Exception as e:
             import traceback
@@ -273,9 +284,10 @@ class MemoryBuilder:
         reference_ids: List[str],
         artifact_ids: List[str],
         run_tree_dict: Dict[str, Any],
-        status: str = "active"
+        status: str = "active",
+        reason_added: Optional[str] = None
     ) -> str:
-        """Create Run node and all relationships."""
+        """Create Run node and all relationships. reason_added = why this run was admitted (for display as bullet points)."""
         run_id = payload.run_id
         created_at = payload.get_created_at() or datetime.now(timezone.utc)
         
@@ -283,7 +295,7 @@ class MemoryBuilder:
             # Store run_tree as JSON string for later retrieval
             run_tree_json = json.dumps(run_tree_dict)
             
-            # Create Run node
+            # Create Run node (summary + reason_added for frontend)
             session.run("""
                 MERGE (r:Run {id: $run_id})
                 SET r.agent_id = $agent_id,
@@ -291,7 +303,8 @@ class MemoryBuilder:
                     r.embedding = $embedding,
                     r.run_tree = $run_tree,
                     r.created_at = $created_at,
-                    r.status = $status
+                    r.status = $status,
+                    r.reason_added = $reason_added
             """, 
                 run_id=run_id,
                 agent_id=payload.agent_id,
@@ -299,7 +312,8 @@ class MemoryBuilder:
                 embedding=summary_embedding,
                 run_tree=run_tree_json,
                 created_at=created_at.isoformat(),
-                status=status
+                status=status,
+                reason_added=reason_added or ""
             )
             
             # Link to Task

@@ -154,6 +154,7 @@ async def retrieve_all_runs(user_id: Optional[str] = None, agent_id: Optional[st
                 user_id=run.get("user_id"),
                 agent_id=run["agent_id"],
                 summary=run["summary"],
+                reason_added=run.get("reason_added"),
                 outcome=run["outcome"],
                 run_tree=run["run_tree"],
                 references=run["references"],
