@@ -1,18 +1,43 @@
 """
 Test: Add one run (with summary + reason_added) and retrieve it.
 Verifies the knowledge base stores and returns summary and reason_added.
+
+Vercel Deployment Protection (401):
+  Use a bypass token (safest): Vercel → Project → Settings → Deployment Protection
+  → "Protection Bypass for Automation" → create/copy secret. Put it in .env (see below).
 """
+import os
 import random
 import requests
 import json
 import uuid
 from datetime import datetime
 
-# API_URL = "https://knowledge-base-spolm.vercel.app"
-API_URL = "http://localhost:8000"  # Local testing
+# Load .env from this directory so VERCEL_BYPASS_TOKEN and KB_API_URL can be set there (never commit .env)
+try:
+    from dotenv import load_dotenv
+    _env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    load_dotenv(_env_path)
+except ImportError:
+    pass
+
+API_URL = (os.environ.get("KB_API_URL") or "https://knowledge-base-spolm.vercel.app").rstrip("/")
+# Preview: KB_API_URL=https://knowledge-base-spolm-okcuwvgyl.vercel.app in .env
+# Local: KB_API_URL=http://localhost:8000
+
+VERCEL_BYPASS_TOKEN = os.environ.get("VERCEL_BYPASS_TOKEN")  # In .env or export; from Vercel → Deployment Protection → Bypass
 
 USER_ID = "rishit.agrawal121@gmail.com"
 AGENT_ID = "IKuz0GgesfFtbA6mrD7J"
+
+
+def _url(path):
+    """Build full URL with optional Vercel bypass token."""
+    base = f"{API_URL}{path}"
+    if VERCEL_BYPASS_TOKEN:
+        sep = "&" if "?" in base else "?"
+        base = f"{base}{sep}x-vercel-set-bypass-cookie=true&x-vercel-protection-bypass={VERCEL_BYPASS_TOKEN}"
+    return base
 
 
 # Different task templates so each test run gets a new, distinct task (avoids NOT/redundant)
@@ -87,6 +112,50 @@ TASK_TEMPLATES = [
         "final_output": "Nim systems app with custom allocator and async I/O",
         "metadata": {"language": "Nim", "libraries": "libuv, flatbuffers"},
     },
+    {
+        "user_task": "Create a Clojure web application using Ring and Compojure that processes financial transaction data, uses core.async channels for concurrent processing, stores results in Datomic, and exposes a REST API with Swagger documentation.",
+        "steps": [
+            {"step_id": "step1", "step_name": "ring_setup", "step_type": "tool_call", "step_input": {"action": "Set up Ring handlers"}, "step_output": {"data": "Routes configured"}},
+            {"step_id": "step2", "step_name": "core_async", "step_type": "tool_call", "step_input": {"action": "Create async processing pipeline"}, "step_output": {"data": "Channels active"}},
+            {"step_id": "step3", "step_name": "datomic", "step_type": "tool_call", "step_input": {"action": "Store transactions in Datomic"}, "step_output": {"data": "Data persisted"}},
+            {"step_id": "step4", "step_name": "swagger", "step_type": "tool_call", "step_input": {"action": "Generate Swagger docs"}, "step_output": {"data": "API documented"}},
+        ],
+        "final_output": "Clojure financial API with async processing and Datomic storage",
+        "metadata": {"language": "Clojure", "stack": "Ring, Compojure, core.async, Datomic"},
+    },
+    {
+        "user_task": "Build an OCaml compiler frontend that parses ML source code, performs type inference using Hindley-Milner algorithm, generates intermediate representation, and outputs optimized bytecode for the OCaml virtual machine.",
+        "steps": [
+            {"step_id": "step1", "step_name": "parser", "step_type": "tool_call", "step_input": {"action": "Parse ML syntax to AST"}, "step_output": {"data": "AST generated"}},
+            {"step_id": "step2", "step_name": "typecheck", "step_type": "tool_call", "step_input": {"action": "Run Hindley-Milner type inference"}, "step_output": {"data": "Types inferred"}},
+            {"step_id": "step3", "step_name": "lambda", "step_type": "tool_call", "step_input": {"action": "Convert to lambda calculus IR"}, "step_output": {"data": "IR ready"}},
+            {"step_id": "step4", "step_name": "bytecode", "step_type": "tool_call", "step_input": {"action": "Emit OCaml bytecode"}, "step_output": {"data": "Bytecode compiled"}},
+        ],
+        "final_output": "OCaml compiler frontend with type inference and bytecode generation",
+        "metadata": {"language": "OCaml", "domain": "compiler", "algorithm": "Hindley-Milner"},
+    },
+    {
+        "user_task": "Develop a Forth interpreter that implements a virtual machine with dictionary-based word lookup, supports immediate and compile-time words, provides a REPL with history, and can save/load dictionary state to binary files.",
+        "steps": [
+            {"step_id": "step1", "step_name": "vm", "step_type": "tool_call", "step_input": {"action": "Implement stack-based VM"}, "step_output": {"data": "VM running"}},
+            {"step_id": "step2", "step_name": "dictionary", "step_type": "tool_call", "step_input": {"action": "Build word dictionary"}, "step_output": {"data": "Dictionary ready"}},
+            {"step_id": "step3", "step_name": "repl", "step_type": "tool_call", "step_input": {"action": "Create REPL with history"}, "step_output": {"data": "REPL active"}},
+            {"step_id": "step4", "step_name": "persist", "step_type": "tool_call", "step_input": {"action": "Save dictionary to binary"}, "step_output": {"data": "State saved"}},
+        ],
+        "final_output": "Forth interpreter with VM, dictionary, REPL, and persistence",
+        "metadata": {"language": "Forth", "features": "stack-based VM, dictionary, REPL"},
+    },
+    {
+        "user_task": "Build an Erlang OTP supervision tree for a distributed key-value store: gen_server for shard state, gen_event for audit logging, supervisor for restart strategy, and libcluster for node discovery across Kubernetes pods.",
+        "steps": [
+            {"step_id": "step1", "step_name": "gen_server", "step_type": "tool_call", "step_input": {"action": "Implement shard gen_server"}, "step_output": {"data": "Shard server running"}},
+            {"step_id": "step2", "step_name": "gen_event", "step_type": "tool_call", "step_input": {"action": "Add audit event handler"}, "step_output": {"data": "Audit logging active"}},
+            {"step_id": "step3", "step_name": "supervisor", "step_type": "tool_call", "step_input": {"action": "One-for-one supervisor tree"}, "step_output": {"data": "Supervision configured"}},
+            {"step_id": "step4", "step_name": "libcluster", "step_type": "tool_call", "step_input": {"action": "Kubernetes DNS node discovery"}, "step_output": {"data": "Cluster formed"}},
+        ],
+        "final_output": "Erlang OTP distributed KV store with supervision and cluster",
+        "metadata": {"language": "Erlang", "framework": "OTP", "gen_server": "true", "libcluster": "true"},
+    },
 ]
 
 
@@ -115,9 +184,13 @@ def add_one_run():
     }
 
     print("Adding run...")
-    r = requests.post(f"{API_URL}/runs", json=payload, timeout=30)
+    r = requests.post(_url("/runs"), json=payload, timeout=30)
     if r.status_code != 200:
-        print(f"Add failed: {r.status_code} {r.text}")
+        print(f"Add failed: {r.status_code} {r.text[:500]}...")
+        if r.status_code == 401:
+            print("\n401 = Vercel Deployment Protection. Either:")
+            print("  1. Vercel → Project → Settings → Deployment Protection → disable or set to 'Only Production'")
+            print("  2. Or set VERCEL_BYPASS_TOKEN (get token from same page) and KB_API_URL to your deployment URL")
         return None
     data = r.json()
     decision = data.get("data", {}).get("decision") or data.get("decision")
@@ -143,7 +216,7 @@ def add_one_run():
 
 def retrieve_runs():
     """GET retrieve_all for user_id and agent_id; return list of runs with summary and reason_added."""
-    url = f"{API_URL}/retrieve_all"
+    url = _url("/retrieve_all")
     params = {"user_id": USER_ID, "agent_id": AGENT_ID, "limit": 10}
     r = requests.get(url, params=params, timeout=30)
     if r.status_code != 200:

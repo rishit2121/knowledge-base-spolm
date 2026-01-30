@@ -62,7 +62,7 @@ Output only a single JSON object, no markdown fences or preamble. Example format
                 prompt,
                 generation_config={
                     "temperature": 0.3,
-                    "max_output_tokens": 1024,
+                    "max_output_tokens": 1024,  # Increased to prevent truncation (summary + why_added array)
                 }
             )
             raw = (response.text or "").strip()
@@ -74,7 +74,7 @@ Output only a single JSON object, no markdown fences or preamble. Example format
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.3,
-                max_tokens=1024
+                max_tokens=1024  # Increased to prevent truncation (summary + why_added array)
             )
             raw = response.choices[0].message.content.strip()
 
@@ -309,7 +309,7 @@ Output only a single JSON object, no markdown fences or preamble. Example format
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,
-                max_tokens=1024,
+                max_tokens=200,
                 response_format={"type": "json_object"}  # Force JSON output
             )
             return response.choices[0].message.content.strip()

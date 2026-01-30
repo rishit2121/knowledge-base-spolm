@@ -53,6 +53,9 @@ class Config:
     # API Configuration
     API_HOST: str = os.getenv("API_HOST", "0.0.0.0")
     API_PORT: int = int(os.getenv("API_PORT", "8000"))
+
+    # CORS: comma-separated origins (e.g. http://localhost:3000,https://myapp.vercel.app). Required when allow_credentials=True.
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
     
     @classmethod
     def validate(cls) -> None:
