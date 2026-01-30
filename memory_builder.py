@@ -121,6 +121,11 @@ class MemoryBuilder:
             # Step 6: Create Run node and relationships (reason_added = LLM "why added"; fallback if empty)
             if not (reason_added or "").strip():
                 reason_added = "• Run added to memory for future retrieval."
+            # Debug: print what we're storing
+            import sys
+            print(f"[DEBUG memory_builder] About to store reason_added (length={len(reason_added or '')}):", file=sys.stderr)
+            print(f"[DEBUG memory_builder] reason_added value:\n{repr(reason_added)}", file=sys.stderr)
+            sys.stderr.flush()
             run_id = self._create_run(
                 payload=payload,
                 summary=summary,

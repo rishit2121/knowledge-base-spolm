@@ -79,13 +79,13 @@ Output only a single JSON object, no markdown fences or preamble. Example format
             raw = response.choices[0].message.content.strip()
 
         summary, reason_added_str = self._parse_summary_response(raw)
-        import os
-        if os.environ.get("DEBUG_KB"):
-            import sys
-            print(f"[DEBUG llm] raw response length={len(raw)}", file=sys.stderr)
-            print(f"[DEBUG llm] raw (first 500): {repr(raw[:500])}", file=sys.stderr)
-            print(f"[DEBUG llm] parsed summary length={len(summary)}, reason_added length={len(reason_added_str)}", file=sys.stderr)
-            print(f"[DEBUG llm] reason_added (first 300): {repr(reason_added_str[:300])}", file=sys.stderr)
+        # Always print debug for reason_added to verify formatting
+        import sys
+        print(f"[DEBUG LLM] Raw response length: {len(raw)}", file=sys.stderr)
+        print(f"[DEBUG LLM] Raw response (first 800 chars):\n{raw[:800]}", file=sys.stderr)
+        print(f"[DEBUG LLM] Parsed summary length: {len(summary)}, reason_added length: {len(reason_added_str)}", file=sys.stderr)
+        print(f"[DEBUG LLM] reason_added value:\n{repr(reason_added_str)}", file=sys.stderr)
+        sys.stderr.flush()
         return summary, reason_added_str
 
     def _parse_summary_response(self, raw: str) -> Tuple[str, str]:
@@ -109,8 +109,11 @@ Output only a single JSON object, no markdown fences or preamble. Example format
         reason_added_str = ""
         try:
             data = json.loads(text)
+            import sys
+            print(f"[DEBUG PARSER] Successfully parsed JSON. Keys: {list(data.keys())}", file=sys.stderr)
             summary = (data.get("summary") or "").strip()
             why_list = data.get("why_added")
+            print(f"[DEBUG PARSER] why_added type: {type(why_list)}, value: {repr(why_list)}", file=sys.stderr)
             if isinstance(why_list, list) and why_list:
                 bullets = [
                     "• " + (str(x).strip().lstrip("•-* "))
@@ -118,6 +121,7 @@ Output only a single JSON object, no markdown fences or preamble. Example format
                     if str(x).strip()
                 ]
                 reason_added_str = "\n".join(bullets) if bullets else ""
+                print(f"[DEBUG PARSER] Converted list to bullets: {repr(reason_added_str)}", file=sys.stderr)
             elif isinstance(why_list, str) and why_list.strip():
                 # Single string: split by newlines or periods into bullets
                 for line in why_list.replace("•", "\n").split("\n"):
@@ -125,7 +129,13 @@ Output only a single JSON object, no markdown fences or preamble. Example format
                     if line:
                         reason_added_str += ("• " + line + "\n") if not reason_added_str else ("• " + line + "\n")
                 reason_added_str = reason_added_str.strip()
-        except (json.JSONDecodeError, TypeError):
+                print(f"[DEBUG PARSER] Converted string to bullets: {repr(reason_added_str)}", file=sys.stderr)
+            else:
+                print(f"[DEBUG PARSER] why_added is empty or invalid: {repr(why_list)}", file=sys.stderr)
+        except (json.JSONDecodeError, TypeError) as e:
+            import sys
+            print(f"[DEBUG PARSER] JSON parse failed: {type(e).__name__}: {str(e)}", file=sys.stderr)
+            print(f"[DEBUG PARSER] Text that failed to parse: {repr(text[:500])}", file=sys.stderr)
             summary = text
 
         if not summary:

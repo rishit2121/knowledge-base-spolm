@@ -18,62 +18,64 @@ AGENT_ID = "IKuz0GgesfFtbA6mrD7J"
 # Different task templates so each test run gets a new, distinct task (avoids NOT/redundant)
 TASK_TEMPLATES = [
     {
-        "user_task": "Design a TypeScript microservice that processes image uploads, generates thumbnails using Sharp, stores originals in S3, and exposes REST endpoints for upload and retrieval.",
+        "user_task": "Build a Zig compiler toolchain that parses source files, performs semantic analysis, generates LLVM IR, and outputs optimized machine code for ARM64 architecture.",
         "steps": [
-            {"step_id": "step1", "step_name": "setup_s3", "step_type": "tool_call", "step_input": {"action": "Configure AWS S3 client"}, "step_output": {"data": "S3 configured"}},
-            {"step_id": "step2", "step_name": "upload_handler", "step_type": "tool_call", "step_input": {"action": "Create POST /upload endpoint"}, "step_output": {"data": "Upload endpoint ready"}},
-            {"step_id": "step3", "step_name": "thumbnail", "step_type": "tool_call", "step_input": {"action": "Use Sharp to resize images"}, "step_output": {"data": "Thumbnails generated"}},
+            {"step_id": "step1", "step_name": "lexer", "step_type": "tool_call", "step_input": {"action": "Tokenize source code"}, "step_output": {"data": "Tokens generated"}},
+            {"step_id": "step2", "step_name": "parser", "step_type": "tool_call", "step_input": {"action": "Build AST from tokens"}, "step_output": {"data": "AST constructed"}},
+            {"step_id": "step3", "step_name": "codegen", "step_type": "tool_call", "step_input": {"action": "Emit LLVM IR and optimize"}, "step_output": {"data": "Binary compiled"}},
         ],
-        "final_output": "Image processing microservice deployed with upload and thumbnail endpoints",
-        "metadata": {"language": "TypeScript", "libraries": "Sharp, AWS SDK, Express"},
+        "final_output": "Zig compiler toolchain producing ARM64 binaries",
+        "metadata": {"language": "Zig", "target": "ARM64, LLVM"},
     },
     {
-        "user_task": "Implement a Kotlin Android app that uses Room database to cache API responses, implements offline-first architecture with WorkManager for background sync, and displays data in RecyclerView.",
+        "user_task": "Create an Elixir Phoenix LiveView application that streams real-time sensor data from IoT devices via WebSockets, aggregates metrics using GenServer, and visualizes trends with SVG charts.",
         "steps": [
-            {"step_id": "step1", "step_name": "room_setup", "step_type": "tool_call", "step_input": {"action": "Define Room entities and DAO"}, "step_output": {"data": "Database schema created"}},
-            {"step_id": "step2", "step_name": "repository", "step_type": "tool_call", "step_input": {"action": "Create Repository with API and DB sources"}, "step_output": {"data": "Repository implemented"}},
-            {"step_id": "step3", "step_name": "workmanager", "step_type": "tool_call", "step_input": {"action": "Schedule periodic sync with WorkManager"}, "step_output": {"data": "Background sync configured"}},
+            {"step_id": "step1", "step_name": "websocket", "step_type": "tool_call", "step_input": {"action": "Set up Phoenix channels"}, "step_output": {"data": "WebSocket connected"}},
+            {"step_id": "step2", "step_name": "genserver", "step_type": "tool_call", "step_input": {"action": "Aggregate sensor readings"}, "step_output": {"data": "Metrics computed"}},
+            {"step_id": "step3", "step_name": "visualization", "step_type": "tool_call", "step_input": {"action": "Render SVG charts in LiveView"}, "step_output": {"data": "Dashboard updated"}},
         ],
-        "final_output": "Android app with offline-first caching and background sync",
-        "metadata": {"language": "Kotlin", "framework": "Android, Room, WorkManager"},
+        "final_output": "Real-time IoT dashboard with live sensor streaming",
+        "metadata": {"language": "Elixir", "framework": "Phoenix LiveView, GenServer"},
     },
     {
-        "user_task": "Create a Swift iOS app using SwiftUI that integrates with Core ML to classify images from the camera, stores results in Core Data, and presents a history view with filters.",
+        "user_task": "Develop a Julia scientific computing pipeline that loads astronomical data from FITS files, performs spectral analysis using FFTW, fits models with Optim.jl, and generates publication-quality plots with Plots.jl.",
         "steps": [
-            {"step_id": "step1", "step_name": "camera", "step_type": "tool_call", "step_input": {"action": "AVFoundation camera capture"}, "step_output": {"data": "Camera ready"}},
-            {"step_id": "step2", "step_name": "coreml", "step_type": "tool_call", "step_input": {"action": "Load MLModel and classify image"}, "step_output": {"data": "Classification complete"}},
-            {"step_id": "step3", "step_name": "coredata", "step_type": "tool_call", "step_input": {"action": "Save results to Core Data"}, "step_output": {"data": "History saved"}},
+            {"step_id": "step1", "step_name": "load_data", "step_type": "tool_call", "step_input": {"action": "Read FITS files"}, "step_output": {"data": "Data loaded"}},
+            {"step_id": "step2", "step_name": "fft", "step_type": "tool_call", "step_input": {"action": "Compute FFT spectrum"}, "step_output": {"data": "Frequency domain"}},
+            {"step_id": "step3", "step_name": "fit", "step_type": "tool_call", "step_input": {"action": "Optimize model parameters"}, "step_output": {"data": "Model fitted"}},
         ],
-        "final_output": "iOS app with real-time image classification and history",
-        "metadata": {"language": "Swift", "framework": "SwiftUI, Core ML, Core Data"},
+        "final_output": "Astronomical data analysis pipeline with spectral fitting",
+        "metadata": {"language": "Julia", "packages": "FITSIO, FFTW, Optim, Plots"},
     },
     {
-        "user_task": "Add a Rust CLI that reads a config TOML file, validates it, and prints a summary of loaded settings.",
+        "user_task": "Implement a Haskell web service using Servant that provides a REST API for managing a distributed ledger, uses STM for concurrent transactions, and persists state with Persistent and PostgreSQL.",
         "steps": [
-            {"step_id": "step1", "step_name": "parse_toml", "step_type": "tool_call", "step_input": {"action": "Parse TOML"}, "step_output": {"data": "Config struct"}},
-            {"step_id": "step2", "step_name": "validate", "step_type": "tool_call", "step_input": {"action": "Validate fields"}, "step_output": {"data": "Valid"}},
+            {"step_id": "step1", "step_name": "servant_api", "step_type": "tool_call", "step_input": {"action": "Define Servant API types"}, "step_output": {"data": "API types defined"}},
+            {"step_id": "step2", "step_name": "stm", "step_type": "tool_call", "step_input": {"action": "Implement STM transaction logic"}, "step_output": {"data": "Concurrent transactions"}},
+            {"step_id": "step3", "step_name": "persistent", "step_type": "tool_call", "step_input": {"action": "Set up Persistent migrations"}, "step_output": {"data": "Database schema"}},
         ],
-        "final_output": "Config loaded and validated; summary printed",
-        "metadata": {"language": "Rust", "crate": "toml"},
+        "final_output": "Haskell distributed ledger service with STM concurrency",
+        "metadata": {"language": "Haskell", "libraries": "Servant, STM, Persistent"},
     },
     {
-        "user_task": "Create a Node.js script that watches a directory for new files and runs a linter on each new or changed file.",
+        "user_task": "Build a Lua script for Neovim that creates a custom LSP client, integrates with nvim-treesitter for syntax highlighting, and implements a fuzzy finder using telescope.nvim.",
         "steps": [
-            {"step_id": "step1", "step_name": "watch_setup", "step_type": "tool_call", "step_input": {"action": "chokidar watch dir"}, "step_output": {"data": "Watching"}},
-            {"step_id": "step2", "step_name": "lint", "step_type": "tool_call", "step_input": {"action": "Run ESLint on changed file"}, "step_output": {"data": "Lint done"}},
+            {"step_id": "step1", "step_name": "lsp", "step_type": "tool_call", "step_input": {"action": "Configure LSP client"}, "step_output": {"data": "LSP attached"}},
+            {"step_id": "step2", "step_name": "treesitter", "step_type": "tool_call", "step_input": {"action": "Set up treesitter parsers"}, "step_output": {"data": "Syntax highlighting"}},
+            {"step_id": "step3", "step_name": "telescope", "step_type": "tool_call", "step_input": {"action": "Create custom picker"}, "step_output": {"data": "Fuzzy finder ready"}},
         ],
-        "final_output": "File watcher running; lint on change",
-        "metadata": {"language": "Node.js", "tools": "chokidar, eslint"},
+        "final_output": "Neovim plugin with LSP, treesitter, and telescope integration",
+        "metadata": {"language": "Lua", "platform": "Neovim, LSP, treesitter"},
     },
     {
-        "user_task": "Develop a C# .NET API that connects to PostgreSQL, implements JWT authentication, uses Entity Framework Core for migrations, and exposes GraphQL endpoints with Hot Chocolate.",
+        "user_task": "Create a Crystal web framework application that uses Kemal for routing, connects to Redis for caching, implements WebSocket chat rooms, and serves static assets with HTTP/2 push.",
         "steps": [
-            {"step_id": "step1", "step_name": "ef_setup", "step_type": "tool_call", "step_input": {"action": "Configure EF Core with PostgreSQL"}, "step_output": {"data": "Database context ready"}},
-            {"step_id": "step2", "step_name": "jwt_auth", "step_type": "tool_call", "step_input": {"action": "Implement JWT token generation"}, "step_output": {"data": "Auth configured"}},
-            {"step_id": "step3", "step_name": "graphql", "step_type": "tool_call", "step_input": {"action": "Set up Hot Chocolate GraphQL schema"}, "step_output": {"data": "GraphQL endpoint active"}},
+            {"step_id": "step1", "step_name": "kemal", "step_type": "tool_call", "step_input": {"action": "Set up Kemal routes"}, "step_output": {"data": "Routes configured"}},
+            {"step_id": "step2", "step_name": "redis", "step_type": "tool_call", "step_input": {"action": "Connect to Redis cache"}, "step_output": {"data": "Cache connected"}},
+            {"step_id": "step3", "step_name": "websocket", "step_type": "tool_call", "step_input": {"action": "Implement chat rooms"}, "step_output": {"data": "Chat active"}},
         ],
-        "final_output": ".NET API with PostgreSQL, JWT auth, and GraphQL",
-        "metadata": {"language": "C#", "framework": ".NET, EF Core, Hot Chocolate"},
+        "final_output": "Crystal web app with Redis caching and WebSocket chat",
+        "metadata": {"language": "Crystal", "framework": "Kemal, Redis, HTTP/2"},
     },
 ]
 
@@ -116,6 +118,10 @@ def add_one_run():
     print(f"Decision: {decision}")
     print(f"Decision reason (internal): {decision_reason[:100]}...")
     if decision == "ADD":
+        print("\n[DEBUG] Full API response data payload:")
+        print(f"  Keys in data: {list(data_payload.keys())}")
+        print(f"  summary: {repr((stored_summary or '')[:200])}")
+        print(f"  reason_added: {repr((stored_reason_added or '')[:400])}")
         has_summary = bool((stored_summary or "").strip())
         has_reason = bool((stored_reason_added or "").strip())
         if not has_summary or not has_reason:

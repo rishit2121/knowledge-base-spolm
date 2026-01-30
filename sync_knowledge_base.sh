@@ -50,8 +50,10 @@ cd "$CURRENT_DIR"
 # Remove all files/directories except preserved ones
 echo "🗑️  Cleaning existing files (preserving sync script and git files)..."
 for item in * .*; do
-    # Skip if item doesn't exist or is in preserve list
+    # Skip if item doesn't exist, is "." or "..", or is in preserve list
     [ ! -e "$item" ] && continue
+    [ "$item" = "." ] && continue
+    [ "$item" = ".." ] && continue
     [[ " ${PRESERVE_ITEMS[@]} " =~ " ${item} " ]] && continue
     
     echo "  Removing: $item"
