@@ -57,7 +57,7 @@ class Config:
     # CORS: comma-separated origins (e.g. http://localhost:3000,https://myapp.vercel.app). Required when allow_credentials=True.
     CORS_ORIGINS: str = os.getenv(
         "CORS_ORIGINS",
-        "http://localhost:3000,http://127.0.0.1:3000,https://fancy-begonia-749ca6.netlify.app",
+        "http://localhost:3000,http://127.0.0.1:3000,https://fancy-begonia-749ca6.netlify.app,https://shimmering-torrone-d527c0.netlify.app",
     )
     
     @classmethod

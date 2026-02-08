@@ -36,6 +36,7 @@ if not _cors_origins:
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://fancy-begonia-749ca6.netlify.app",
+        "https://shimmering-torrone-d527c0.netlify.app",
     ]
 app.add_middleware(
     CORSMiddleware,
