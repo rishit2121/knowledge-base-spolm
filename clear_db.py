@@ -43,7 +43,7 @@ def clear_database():
         print("\n✅ Database cleared successfully!")
         print("\nNext steps:")
         print("  1. Run: python init_db.py  (to recreate schema)")
-        print("  2. Start adding runs with the new User-Agent-Run structure")
+        print("  2. Start adding runs with the Task-as-spine structure")
         
         return True
         

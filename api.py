@@ -32,12 +32,7 @@ app = FastAPI(
 # CORS: explicit origins required when allow_credentials=True (browsers reject "*" with credentials)
 _cors_origins = [o.strip() for o in config.Config.CORS_ORIGINS.split(",") if o.strip()]
 if not _cors_origins:
-    _cors_origins = [
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "https://fancy-begonia-749ca6.netlify.app",
-        "https://shimmering-torrone-d527c0.netlify.app",
-    ]
+    _cors_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins,
@@ -165,9 +160,10 @@ async def retrieve_all_runs(user_id: Optional[str] = None, agent_id: Optional[st
                 reason_added=run.get("reason_added"),
                 outcome=run["outcome"],
                 run_tree=run["run_tree"],
-                references=run["references"],
-                artifacts=run["artifacts"],
-                created_at=run["created_at"]
+                references=run.get("references", []),
+                artifacts=run.get("artifacts", []),
+                created_at=run["created_at"],
+                task_label=run.get("task_label"),
             )
             for run in runs_data
         ]
@@ -182,28 +178,21 @@ async def retrieve_all_runs(user_id: Optional[str] = None, agent_id: Optional[st
 
 @app.get("/stats")
 async def get_stats():
-    """Get statistics about the knowledge base."""
+    """Get statistics about the knowledge base (Task/Run/ABOUT_TASK)."""
     from db.connection import get_neo4j_driver
-    
+
     driver = get_neo4j_driver()
     with driver.session() as session:
         stats = {}
-        
-        # Count nodes
-        for label in ["Task", "Run", "Reference", "Artifact", "Outcome"]:
+        for label in ["Task", "Run"]:
             result = session.run(f"MATCH (n:{label}) RETURN count(n) AS count")
             stats[label.lower() + "_count"] = result.single()["count"]
-        
-        # Count relationships
-        result = session.run("""
-            MATCH ()-[r]->()
-            RETURN type(r) AS type, count(r) AS count
-        """)
-        relationship_counts = {}
-        for record in result:
-            relationship_counts[record["type"]] = record["count"]
-        stats["relationships"] = relationship_counts
-        
+        result = session.run(
+            "MATCH ()-[r]->() RETURN type(r) AS type, count(r) AS count"
+        )
+        stats["relationships"] = {
+            record["type"]: record["count"] for record in result
+        }
         return stats
 
 

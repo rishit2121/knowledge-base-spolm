@@ -148,6 +148,70 @@ Output only a single JSON object, no markdown fences or preamble. Example format
             reason_added_str = "• Run added to memory for future retrieval.\n• " + (first_sentence or "Summary stored for context.")
         return summary, reason_added_str
     
+    def extract_task_label(self, run_tree: Dict[str, Any]) -> str:
+        """
+        Extract a 3-5 word canonical task label from the run.
+        Used for Task normalization - "what was this run about?"
+
+        Returns:
+            Task label string, e.g. "environmental impact analysis", "json schema generation"
+        """
+        prompt = f"""In 3-5 words, what was this agent run about? Output valid JSON only with one key "task".
+
+Example outputs:
+{{"task": "environmental impact analysis"}}
+{{"task": "json schema generation"}}
+{{"task": "constitutional law research"}}
+
+Run log:
+{self._format_run_tree(run_tree)}
+
+Output only a JSON object: {{"task": "your 3-5 word label"}}"""
+
+        if self.provider == "gemini":
+            model_name = self.model if self.model.startswith("models/") else f"models/{self.model}"
+            model = self.client.GenerativeModel(model_name)
+            response = model.generate_content(
+                prompt,
+                generation_config={"temperature": 0.2, "max_output_tokens": 64},
+            )
+            raw = (response.text or "").strip()
+        else:
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "Respond with valid JSON only."},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.2,
+                max_tokens=64,
+            )
+            raw = response.choices[0].message.content.strip()
+
+        # Parse JSON
+        text = raw.strip()
+        if text.startswith("```"):
+            text = re.sub(r"^```\w*\n?", "", text)
+            text = re.sub(r"\n?```\s*$", "", text).strip()
+        start = text.find("{")
+        if start >= 0:
+            end = text.rfind("}") + 1
+            if end > start:
+                text = text[start:end]
+        try:
+            data = json.loads(text)
+            label = (data.get("task") or "").strip()
+            if label:
+                return label
+        except (json.JSONDecodeError, TypeError):
+            pass
+        # Fallback: use first few words of user_task if present
+        user_task = (run_tree.get("user_task") or run_tree.get("task_text") or "").strip()
+        if user_task:
+            words = user_task.split()[:5]
+            return " ".join(words) if words else "unknown task"
+        return "unknown task"
+
     def _format_run_tree(self, run_tree: Dict[str, Any], indent: int = 0) -> str:
         """Format run tree for display in prompt."""
         lines = []

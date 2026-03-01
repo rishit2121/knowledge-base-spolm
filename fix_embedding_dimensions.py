@@ -18,12 +18,12 @@ def fix_embedding_dimensions():
     print()
     
     with driver.session() as session:
-        # Drop existing vector indexes
+        # Drop existing vector indexes (Task and Run only in minimal schema)
         indexes_to_drop = [
             "task_embedding_index",
             "run_embedding_index",
-            "reference_embedding_index",
-            "artifact_embedding_index"
+            "reference_embedding_index",  # Legacy
+            "artifact_embedding_index",   # Legacy
         ]
         
         print("🗑️  Dropping existing vector indexes...")
@@ -66,35 +66,7 @@ def fix_embedding_dimensions():
                 }
             """, dimensions=embedding_dimension)
             print(f"   ✓ Created run_embedding_index (dimension: {embedding_dimension})")
-            
-            # Reference embedding index
-            session.run("""
-                CREATE VECTOR INDEX reference_embedding_index IF NOT EXISTS
-                FOR (ref:Reference)
-                ON (ref.embedding)
-                OPTIONS {
-                    indexConfig: {
-                        `vector.dimensions`: $dimensions,
-                        `vector.similarity_function`: 'cosine'
-                    }
-                }
-            """, dimensions=embedding_dimension)
-            print(f"   ✓ Created reference_embedding_index (dimension: {embedding_dimension})")
-            
-            # Artifact embedding index
-            session.run("""
-                CREATE VECTOR INDEX artifact_embedding_index IF NOT EXISTS
-                FOR (a:Artifact)
-                ON (a.embedding)
-                OPTIONS {
-                    indexConfig: {
-                        `vector.dimensions`: $dimensions,
-                        `vector.similarity_function`: 'cosine'
-                    }
-                }
-            """, dimensions=embedding_dimension)
-            print(f"   ✓ Created artifact_embedding_index (dimension: {embedding_dimension})")
-            
+
             print()
             print("✅ Vector indexes recreated successfully!")
             print()

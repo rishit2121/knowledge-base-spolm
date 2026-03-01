@@ -43,9 +43,10 @@ class RunDetail(BaseModel):
     reason_added: Optional[str] = None  # Why this run was added (bullet points for display)
     outcome: str
     run_tree: Optional[Dict[str, Any]] = None
-    references: List[Dict[str, Any]]
-    artifacts: List[Dict[str, Any]]
+    references: List[Dict[str, Any]]  # Kept for backward compat, now always []
+    artifacts: List[Dict[str, Any]]  # Kept for backward compat, now always []
     created_at: Optional[str] = None
+    task_label: Optional[str] = None  # Semantic task this run was about
 
 
 class RetrieveAllResponse(BaseModel):

@@ -39,10 +39,10 @@ class DecisionLayer:
         run_embedding: List[float],
         task_text: str,
         outcome: str,
-        references: List[Dict[str, Any]],
-        artifacts: List[Dict[str, Any]],
         agent_id: Optional[str] = None,
-        user_id: Optional[str] = None
+        user_id: Optional[str] = None,
+        references: Optional[List[Dict[str, Any]]] = None,
+        artifacts: Optional[List[Dict[str, Any]]] = None,
     ) -> MemoryDecision:
         """
         Decide what to do with a new run.
@@ -96,8 +96,6 @@ class DecisionLayer:
             run_summary=run_summary,
             task_text=task_text,
             outcome=outcome,
-            references=references,
-            artifacts=artifacts,
             similar_runs=similar_runs
         )
         decision.run_id = run_id
@@ -135,30 +133,14 @@ class DecisionLayer:
             ]
             params = {}
             
-            # Filter by user_id if provided (through User -> Agent -> Run hierarchy)
+            # Filter by user_id and/or agent_id (stored on Run)
+            match_clause = "MATCH (r:Run)"
             if user_id:
-                # Match through User -> Agent -> Run
-                match_clause = """
-                    MATCH (u:User {user_id: $user_id})-[:HAS_AGENT]->(a:Agent)-[:EXECUTED]->(r:Run)
-                """
+                where_clauses.append("r.user_id = $user_id")
                 params["user_id"] = user_id
-                # Also filter by agent_id if provided (to ensure same agent)
-                if agent_id:
-                    where_clauses.append("a.agent_id = $agent_id")
-                    params["agent_id"] = agent_id
-            elif agent_id:
-                # Filter by agent_id only (through Agent -> Run)
-                match_clause = """
-                    MATCH (a:Agent {agent_id: $agent_id})-[:EXECUTED]->(r:Run)
-                """
+            if agent_id:
+                where_clauses.append("r.agent_id = $agent_id")
                 params["agent_id"] = agent_id
-            else:
-                # No filters - match all runs (backward compatibility)
-                match_clause = "MATCH (r:Run)"
-                # Still filter by agent_id if provided (direct property match)
-                if agent_id:
-                    where_clauses.append("r.agent_id = $agent_id")
-                    params["agent_id"] = agent_id
             
             query = f"""
                 {match_clause}
@@ -184,51 +166,28 @@ class DecisionLayer:
                     continue
                 
                 if similarity >= self.LOW_SIMILARITY_THRESHOLD:
-                    # Get outcome and relationships
                     run_id = record["run_id"]
-                    run_details = self._get_run_details(run_id)
-                    
+                    outcome_val = self._get_run_outcome(run_id)
                     runs_with_similarity.append(SimilarRun(
                         run_id=run_id,
                         summary=record["summary"],
-                        outcome=run_details.get("outcome", "unknown"),
+                        outcome=outcome_val,
                         similarity=similarity,
-                        references=run_details.get("references", []),
-                        artifacts=run_details.get("artifacts", [])
                     ))
             
             # Sort by similarity and return top_k
             runs_with_similarity.sort(key=lambda x: x.similarity, reverse=True)
             return runs_with_similarity[:top_k]
     
-    def _get_run_details(self, run_id: str) -> Dict[str, Any]:
-        """Get full details of a run including references and artifacts."""
+    def _get_run_outcome(self, run_id: str) -> str:
+        """Get outcome from Run node (stored as property)."""
         with self.driver.session() as session:
-            result = session.run("""
-                MATCH (r:Run {id: $run_id})
-                OPTIONAL MATCH (r)-[:READS]->(ref:Reference)
-                OPTIONAL MATCH (r)-[:WRITES]->(a:Artifact)
-                OPTIONAL MATCH (r)-[:ENDED_WITH]->(o:Outcome)
-                RETURN collect(DISTINCT {
-                    id: ref.id,
-                    type: ref.type
-                }) AS references,
-                collect(DISTINCT {
-                    id: a.id,
-                    type: a.type
-                }) AS artifacts,
-                o.label AS outcome
-            """, run_id=run_id)
-            
+            result = session.run(
+                "MATCH (r:Run {id: $run_id}) RETURN r.outcome AS outcome",
+                run_id=run_id,
+            )
             record = result.single()
-            if not record:
-                return {"outcome": "unknown", "references": [], "artifacts": []}
-            
-            return {
-                "outcome": record["outcome"] or "unknown",
-                "references": [r for r in (record["references"] or []) if r.get("id")],
-                "artifacts": [a for a in (record["artifacts"] or []) if a.get("id")]
-            }
+            return (record["outcome"] or "unknown") if record else "unknown"
     
     def _deterministic_filter(
         self,
@@ -275,35 +234,27 @@ class DecisionLayer:
         run_summary: str,
         task_text: str,
         outcome: str,
-        references: List[Dict[str, Any]],
-        artifacts: List[Dict[str, Any]],
-        similar_runs: List[SimilarRun]
+        similar_runs: List[SimilarRun],
     ) -> MemoryDecision:
         """
         Stage 2: LLM judge for ambiguous cases.
         
         LLM must choose: ADD, NOT, REPLACE, or MERGE
         """
-        # Prepare context for LLM
-        similar_runs_context = []
-        for run in similar_runs:
-            similar_runs_context.append({
+        similar_runs_context = [
+            {
                 "run_id": run.run_id,
                 "summary": run.summary,
                 "outcome": run.outcome,
                 "similarity": run.similarity,
-                "references_count": len(run.references),
-                "artifacts_count": len(run.artifacts)
-            })
-        
-        # Build prompt
+            }
+            for run in similar_runs
+        ]
         prompt = self._build_decision_prompt(
             current_summary=run_summary,
             task_text=task_text,
             outcome=outcome,
-            references_count=len(references),
-            artifacts_count=len(artifacts),
-            similar_runs=similar_runs_context
+            similar_runs=similar_runs_context,
         )
         
         # Call LLM with structured output
@@ -482,27 +433,14 @@ class DecisionLayer:
         current_summary: str,
         task_text: str,
         outcome: str,
-        references_count: int,
-        artifacts_count: int,
-        similar_runs: List[Dict[str, Any]]
+        similar_runs: List[Dict[str, Any]],
     ) -> str:
         """Build the prompt for LLM decision making."""
-        similar_runs_text = "\n".join([
-            f"- Run ID: {r['run_id']}\n"
-            f"  Summary: {r['summary']}\n"
-            f"  Outcome: {r['outcome']}\n"
-            f"  Similarity: {r['similarity']:.2f}\n"
-            f"  References: {r['references_count']}, Artifacts: {r['artifacts_count']}"
-            for r in similar_runs
-        ])
-        
-        # Build concise prompt to reduce token usage
         similar_runs_summary = ""
         if similar_runs:
-            # Only include essential info to save tokens
             similar_runs_summary = "\n".join([
                 f"Run {r['run_id'][:12]}: {r['outcome']} (sim: {r['similarity']:.2f})"
-                for r in similar_runs[:2]  # Only top 2
+                for r in similar_runs[:2]
             ])
         else:
             similar_runs_summary = "None"

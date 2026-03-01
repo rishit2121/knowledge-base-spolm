@@ -1,35 +1,38 @@
 # Knowledge Base for Agentic Workflow Runs
 
-A run-centric knowledge base system that stores and retrieves agent workflow experiences using Neo4j as the graph database backend.
+A run-centric knowledge base with **Task as the spine**. Tasks organize memory; runs are leaves under tasks.
 
 ## Overview
 
-This system implements a complete knowledge base infrastructure for storing agent runs with:
-- **Neo4j Knowledge Graph**: Stores runs, tasks, references, artifacts, and outcomes
-- **Memory Builder**: Processes completed runs and extracts structured information
-- **Memory Retrieval API**: Provides similarity search and context retrieval for agents
-- **Vector Embeddings**: Uses OpenAI embeddings for semantic similarity
+- **Task** = semantic anchor (“what this run is about”) – extracted dynamically, not predefined
+- **Run** = one concrete execution – linked via `(Run)-[:ABOUT_TASK]->(Task)`
+- **Neo4j** = graph backend with vector embeddings for similarity
+- **Memory Builder** = summarize run → extract task label → normalize task → store
+- **Memory Retrieval** = semantic search Runs → jump to Task → get sibling Runs → summarize patterns
 
 ## Architecture
 
 ```
-[Run Logs] 
+[Run Logs]
     ↓
-[Memory Builder]        ← Processes runs, extracts knowledge
+[Memory Builder]
+    │  1. Summarize run
+    │  2. Extract task label (LLM: "In 3–5 words, what was this about?")
+    │  3. Normalize task (get_or_create via semantic similarity)
+    │  4. Create Run, link (Run)-[:ABOUT_TASK]->(Task)
     ↓
-[Neo4j Knowledge Graph] ← Stores structured experience
+[Neo4j Knowledge Graph]   Task = branch, Run = leaf
     ↓
-[Memory Retrieval API]  ← Retrieves relevant context
+[Memory Retrieval]
+    │  1. Semantic search over Runs
+    │  2. Jump to Task via ABOUT_TASK
+    │  3. Get sibling Runs (same task)
+    │  4. Summarize patterns ("succeeded when X, failed when Y")
 ```
 
-### Run summary
+### Task extraction and normalization
 
-When a run is added to the knowledge graph, an LLM (e.g. Gemini, configurable via `PROVIDER`) summarizes the full run log. The summary includes:
-
-1. **How well the run proceeded**: Success/failure/partial, key metrics, and notable issues or successes.
-2. **Important information for memory**: Key decisions, findings, errors, or outputs worth remembering for future runs.
-
-This summary is stored on the Run node and embedded for similarity search, so retrieval can surface relevant past runs by semantic similarity.
+Tasks are **not** predefined. After a run completes, an LLM extracts a 3–5 word label (e.g. `"json schema generation"`, `"environmental impact analysis"`). The system then normalizes via semantic similarity: similar labels map to the same Task, so many runs connect to one Task.
 
 ## Prerequisites
 
@@ -92,8 +95,10 @@ python init_db.py
 
 This will:
 - Create vector indexes (if supported)
-- Set up node labels and relationships
+- Set up Task and Run nodes, ABOUT_TASK relationship
 - Create constraints for data integrity
+
+**Migration from older schema**: If you have existing data from the previous schema (Reference, Artifact, Outcome, TRIGGERED), run `python clear_db.py` and then `python init_db.py` to start fresh with the new Task-as-spine structure.
 
 ### 5. Start the API Server
 
@@ -183,31 +188,21 @@ curl -X POST "http://localhost:8000/retrieve" \
   }'
 ```
 
-## Graph Schema
+## Graph Schema (Minimal)
 
 ### Node Labels
 
-- **:Task** - Represents tasks that trigger runs
-  - `id`, `text`, `embedding`
-  
-- **:Run** - Represents completed agent runs
-  - `id`, `agent_id`, `summary`, `embedding`, `created_at`
-  
-- **:Reference** - Information referenced during runs
-  - `id`, `type`, `embedding`, `source_ref`
-  
-- **:Artifact** - Outputs produced during runs
-  - `id`, `type`, `embedding`, `hash`
-  
-- **:Outcome** - Run outcomes
-  - `label` (success/failure/partial)
+- **:Task** – Semantic category (“what this run is about”)
+  - `id`, `label`, `embedding`
+
+- **:Run** – One concrete execution
+  - `id`, `agent_id`, `user_id`, `summary`, `embedding`, `outcome`, `created_at`, `run_tree`, `reason_added`
 
 ### Relationships
 
-- `(:Task)-[:TRIGGERED]->(:Run)`
-- `(:Run)-[:READS]->(:Reference)`
-- `(:Run)-[:WRITES]->(:Artifact)`
-- `(:Run)-[:ENDED_WITH]->(:Outcome)`
+- `(:Run)-[:ABOUT_TASK]->(:Task)` – “This run was about this task.”
+
+Tree shape: `[Task]` ← many `[Run]` nodes (runs point to tasks).
 
 ## Configuration
 

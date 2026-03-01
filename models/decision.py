@@ -21,6 +21,4 @@ class SimilarRun(BaseModel):
     summary: str
     outcome: str
     similarity: float
-    references: list[dict]
-    artifacts: list[dict]
 
