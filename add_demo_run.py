@@ -4,7 +4,7 @@ import json
 from datetime import datetime
 
 # Use Vercel deployment URL (can be changed to localhost:8000 for local testing)
-API_URL = "https://knowledge-base-spolm.vercel.app"
+API_URL = "https://knowledge-base-spolm-c5abd3rzf.vercel.app"
 # API_URL = "http://localhost:8000"  # Uncomment for local testing
 
 

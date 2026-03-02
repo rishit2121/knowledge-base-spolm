@@ -474,21 +474,11 @@ Return ONLY this JSON (complete all fields):
         return float(dot_product / (norm1 * norm2))
     
     def store_decision(self, decision: MemoryDecision) -> None:
-        """Store decision for observability."""
-        with self.driver.session() as session:
-            session.run("""
-                MERGE (d:MemoryDecision {run_id: $run_id})
-                SET d.decision = $decision,
-                    d.target_run_id = $target_run_id,
-                    d.reason = $reason,
-                    d.similarity_score = $similarity_score,
-                    d.timestamp = $timestamp
-            """,
-                run_id=decision.run_id,
-                decision=decision.decision,
-                target_run_id=decision.target_run_id,
-                reason=decision.reason,
-                similarity_score=decision.similarity_score,
-                timestamp=decision.timestamp.isoformat()
-            )
+        """Store decision metadata.
+
+        Intentionally a no-op in Neo4j to keep the graph minimal (Task + Run only).
+        Decision information is already reflected via Run properties like
+        summary, outcome, and reason_added, plus logs.
+        """
+        return
 

@@ -156,7 +156,12 @@ Output only a single JSON object, no markdown fences or preamble. Example format
         Returns:
             Task label string, e.g. "environmental impact analysis", "json schema generation"
         """
-        prompt = f"""In 3-5 words, what was this agent run about? Output valid JSON only with one key "task".
+        prompt = f"""In 3-5 words, what high-level task was this agent run about?
+
+- Focus on the semantic goal, not implementation details.
+- Do NOT include specific libraries, frameworks, tools, APIs, file names, or proper nouns.
+- Use general phrases like "environmental impact analysis", "json schema generation", "constitutional law research".
+- Think of a label that could group many similar runs under the same branch.
 
 Example outputs:
 {{"task": "environmental impact analysis"}}

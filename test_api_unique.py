@@ -6,7 +6,7 @@ import sys
 import requests
 from datetime import datetime
 
-API_URL = "https://knowledge-base-spolm.vercel.app"
+API_URL = "https://knowledge-base-spolm-c5abd3rzf.vercel.app"
 USER_ID = "rishit.agrawal121@gmail.com"
 AGENT_ID = "IKuz0GgesfFtbA6mrD7J"
 

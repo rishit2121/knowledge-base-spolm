@@ -21,8 +21,7 @@ try:
 except ImportError:
     pass
 
-API_URL = (os.environ.get("KB_API_URL") or "https://knowledge-base-spolm.vercel.app").rstrip("/")
-# Preview: KB_API_URL=https://knowledge-base-spolm-okcuwvgyl.vercel.app in .env
+API_URL = (os.environ.get("KB_API_URL") or "https://knowledge-base-spolm-c5abd3rzf.vercel.app").rstrip("/")
 # Local: KB_API_URL=http://localhost:8000
 
 VERCEL_BYPASS_TOKEN = os.environ.get("VERCEL_BYPASS_TOKEN")  # In .env or export; from Vercel → Deployment Protection → Bypass
